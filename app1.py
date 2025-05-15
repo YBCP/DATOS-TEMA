@@ -2252,8 +2252,8 @@ def main():
         st.success(f"Se han cargado {len(registros_df)} registros de la base de datos.")
 
         # Si deseas ver las columnas cargadas (útil para depuración)
-        if st.checkbox("Mostrar columnas cargadas", value=False):
-            st.write("Columnas en registros_df:", list(registros_df.columns))
+        #if st.checkbox("Mostrar columnas cargadas", value=False):
+        #    st.write("Columnas en registros_df:", list(registros_df.columns))
 
         # Aplicar validaciones de reglas de negocio
         registros_df = validar_reglas_negocio(registros_df)
