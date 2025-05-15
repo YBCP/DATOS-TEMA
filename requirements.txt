@@ -2,3 +2,5 @@ dash
 pandas
 numpy
 plotly
+matplotlib
+openpyxl
