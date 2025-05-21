@@ -292,6 +292,24 @@ def mostrar_edicion_registros(registros_df):
     st.info(
         "Esta sección permite editar los datos usando selectores de fecha y opciones. Los cambios se guardan automáticamente al hacer modificaciones.")
 
+    # Explicación adicional sobre las fechas y reglas de validación
+    st.warning("""
+    **Importante**: 
+    - Para los campos de fecha, utilice el selector de calendario que aparece.
+    - El campo "Plazo de análisis" se calcula automáticamente como 5 días hábiles después de la "Fecha de entrega de información", sin contar fines de semana ni festivos.
+    - El campo "Plazo de cronograma" se calcula automáticamente como 3 días hábiles después del "Plazo de análisis", sin contar fines de semana ni festivos.
+    - El campo "Plazo de oficio de cierre" se calcula automáticamente como 7 días hábiles después de la fecha real de "Publicación", sin contar fines de semana ni festivos.
+    - Se aplicarán automáticamente las siguientes validaciones:
+        1. Si 'Entrega acuerdo de compromiso' no está vacío, 'Acuerdo de compromiso' se actualizará a 'SI'
+        2. Si 'Análisis y cronograma' tiene fecha, 'Análisis de información' se actualizará a 'SI'
+        3. Si introduce fecha en 'Estándares', se verificará que los campos 'Registro (completo)', 'ET (completo)', 'CO (completo)', 'DD (completo)', 'REC (completo)' y 'SERVICIO (completo)' estén 'Completo'
+        4. Si introduce fecha en 'Publicación', se verificará que 'Disponer datos temáticos' sea 'SI'
+        5. Si 'Disponer datos temáticos' se marca como 'No', se eliminará la fecha de 'Publicación' si existe.
+        6. Para introducir una fecha en 'Fecha de oficio de cierre', todos los campos Si/No deben estar marcados como 'Si', todos los estándares deben estar 'Completo' y todas las fechas diligenciadas y anteriores a la fecha de cierre.
+        7. Al introducir una fecha en 'Fecha de oficio de cierre', el campo 'Estado' se actualizará automáticamente a 'Completado'.
+        8. Si se modifica algún campo de forma que ya no cumpla con las reglas para 'Fecha de oficio de cierre', esta fecha se borrará automáticamente.
+        9. Solo los registros con 'Fecha de oficio de cierre' válida pueden tener estado 'Completado'.
+    """)
     # Mostrar mensaje de guardado si existe
     if st.session_state.mensaje_guardado:
         if st.session_state.mensaje_guardado[0] == "success":
@@ -1621,7 +1639,6 @@ def mostrar_ayuda():
 
 # Nueva función para mostrar alertas de vencimientos
 # Función mostrar_alertas_vencimientos corregida para el error NaTType
-
 def mostrar_alertas_vencimientos(registros_df):
     """Muestra alertas de vencimientos de fechas en los registros."""
     st.markdown('<div class="subtitle">Alertas de Vencimientos</div>', unsafe_allow_html=True)
@@ -1723,7 +1740,7 @@ def mostrar_alertas_vencimientos(registros_df):
             fecha_oficio_cierre = procesar_fecha(row.get('Fecha de oficio de cierre', ''))
 
             # Caso especial: Acuerdo de compromiso pendiente
-            if fecha_entrega_acuerdo is not None and not pd.isna(fecha_entrega_acuerdo) and (
+            if fecha_entrega_acuerdo is not None and pd.notna(fecha_entrega_acuerdo) and (
                     fecha_entrega_info is None or pd.isna(fecha_entrega_info)):
                 if es_vencido(fecha_entrega_acuerdo):
                     dias_rezago = calcular_dias_rezago(fecha_entrega_acuerdo)
@@ -1741,10 +1758,9 @@ def mostrar_alertas_vencimientos(registros_df):
                     })
 
             # 1. Entrega de información
-            if fecha_entrega_acuerdo is not None and not pd.isna(
-                    fecha_entrega_acuerdo) and fecha_entrega_info is not None and not pd.isna(fecha_entrega_info):
-                if es_vencido(fecha_entrega_acuerdo) and es_vencido(fecha_entrega_info):
-                    # Ambas fechas pasadas, comprobar si entrega info está atrasada respecto a entrega acuerdo
+            if fecha_entrega_acuerdo is not None and pd.notna(fecha_entrega_acuerdo):
+                if fecha_entrega_info is not None and pd.notna(fecha_entrega_info):
+                    # Si hay fecha real, verificar si está con retraso
                     if fecha_entrega_info > fecha_entrega_acuerdo:
                         dias_rezago = calcular_dias_habiles(fecha_entrega_acuerdo, fecha_entrega_info)
                         registros_alertas.append({
@@ -1756,211 +1772,221 @@ def mostrar_alertas_vencimientos(registros_df):
                             'Fecha Programada': fecha_entrega_acuerdo,
                             'Fecha Real': fecha_entrega_info,
                             'Días Rezago': dias_rezago,
-                            'Estado': 'Vencido',
+                            'Estado': 'Completado con retraso',
                             'Descripción': f'Entrega de información con {dias_rezago} días hábiles de retraso'
+                        })
+                else:
+                    # No hay fecha real, verificar si está vencido
+                    if es_vencido(fecha_entrega_acuerdo):
+                        dias_rezago = calcular_dias_rezago(fecha_entrega_acuerdo)
+                        registros_alertas.append({
+                            'Cod': row['Cod'],
+                            'Entidad': row['Entidad'],
+                            'Nivel Información': row.get('Nivel Información ', ''),
+                            'Funcionario': row.get('Funcionario', ''),
+                            'Tipo Alerta': 'Entrega de información',
+                            'Fecha Programada': fecha_entrega_acuerdo,
+                            'Fecha Real': None,
+                            'Días Rezago': dias_rezago,
+                            'Estado': 'Vencido',
+                            'Descripción': f'Entrega de información vencida hace {dias_rezago} días'
                         })
 
             # 2. Análisis y cronograma
-            if fecha_plazo_cronograma is not None and not pd.isna(fecha_plazo_cronograma):
-                if (fecha_analisis_cronograma is None or pd.isna(fecha_analisis_cronograma)) and es_vencido(
-                        fecha_plazo_cronograma):
-                    # Plazo vencido sin fecha real
-                    dias_rezago = calcular_dias_rezago(fecha_plazo_cronograma)
-                    registros_alertas.append({
-                        'Cod': row['Cod'],
-                        'Entidad': row['Entidad'],
-                        'Nivel Información': row.get('Nivel Información ', ''),
-                        'Funcionario': row.get('Funcionario', ''),
-                        'Tipo Alerta': 'Análisis y cronograma',
-                        'Fecha Programada': fecha_plazo_cronograma,
-                        'Fecha Real': None,
-                        'Días Rezago': dias_rezago,
-                        'Estado': 'Vencido',
-                        'Descripción': f'Plazo de cronograma vencido hace {dias_rezago} días sin fecha real'
-                    })
-                elif (fecha_analisis_cronograma is None or pd.isna(
-                        fecha_analisis_cronograma)) and es_proximo_vencimiento(fecha_plazo_cronograma):
-                    # Próximo a vencer
-                    dias_restantes = calcular_dias_habiles(fecha_actual, fecha_plazo_cronograma)
-                    registros_alertas.append({
-                        'Cod': row['Cod'],
-                        'Entidad': row['Entidad'],
-                        'Nivel Información': row.get('Nivel Información ', ''),
-                        'Funcionario': row.get('Funcionario', ''),
-                        'Tipo Alerta': 'Análisis y cronograma',
-                        'Fecha Programada': fecha_plazo_cronograma,
-                        'Fecha Real': None,
-                        'Días Rezago': -dias_restantes,  # Negativo indica días por vencer
-                        'Estado': 'Próximo a vencer',
-                        'Descripción': f'Plazo de cronograma vence en {dias_restantes} días hábiles'
-                    })
-                elif fecha_analisis_cronograma is not None and not pd.isna(
-                        fecha_analisis_cronograma) and fecha_analisis_cronograma > fecha_plazo_cronograma:
-                    # Completado con retraso
-                    dias_rezago = calcular_dias_habiles(fecha_plazo_cronograma, fecha_analisis_cronograma)
-                    registros_alertas.append({
-                        'Cod': row['Cod'],
-                        'Entidad': row['Entidad'],
-                        'Nivel Información': row.get('Nivel Información ', ''),
-                        'Funcionario': row.get('Funcionario', ''),
-                        'Tipo Alerta': 'Análisis y cronograma',
-                        'Fecha Programada': fecha_plazo_cronograma,
-                        'Fecha Real': fecha_analisis_cronograma,
-                        'Días Rezago': dias_rezago,
-                        'Estado': 'Completado con retraso',
-                        'Descripción': f'Análisis realizado con {dias_rezago} días hábiles de retraso'
-                    })
+            if fecha_plazo_cronograma is not None and pd.notna(fecha_plazo_cronograma):
+                if fecha_analisis_cronograma is not None and pd.notna(fecha_analisis_cronograma):
+                    # Hay fecha real, verificar si está con retraso
+                    if fecha_analisis_cronograma > fecha_plazo_cronograma:
+                        dias_rezago = calcular_dias_habiles(fecha_plazo_cronograma, fecha_analisis_cronograma)
+                        registros_alertas.append({
+                            'Cod': row['Cod'],
+                            'Entidad': row['Entidad'],
+                            'Nivel Información': row.get('Nivel Información ', ''),
+                            'Funcionario': row.get('Funcionario', ''),
+                            'Tipo Alerta': 'Análisis y cronograma',
+                            'Fecha Programada': fecha_plazo_cronograma,
+                            'Fecha Real': fecha_analisis_cronograma,
+                            'Días Rezago': dias_rezago,
+                            'Estado': 'Completado con retraso',
+                            'Descripción': f'Análisis realizado con {dias_rezago} días hábiles de retraso'
+                        })
+                else:
+                    # No hay fecha real, verificar si está vencido o próximo
+                    if es_vencido(fecha_plazo_cronograma):
+                        dias_rezago = calcular_dias_rezago(fecha_plazo_cronograma)
+                        registros_alertas.append({
+                            'Cod': row['Cod'],
+                            'Entidad': row['Entidad'],
+                            'Nivel Información': row.get('Nivel Información ', ''),
+                            'Funcionario': row.get('Funcionario', ''),
+                            'Tipo Alerta': 'Análisis y cronograma',
+                            'Fecha Programada': fecha_plazo_cronograma,
+                            'Fecha Real': None,
+                            'Días Rezago': dias_rezago,
+                            'Estado': 'Vencido',
+                            'Descripción': f'Plazo de cronograma vencido hace {dias_rezago} días sin fecha real'
+                        })
+                    elif es_proximo_vencimiento(fecha_plazo_cronograma):
+                        dias_restantes = calcular_dias_habiles(fecha_actual, fecha_plazo_cronograma)
+                        registros_alertas.append({
+                            'Cod': row['Cod'],
+                            'Entidad': row['Entidad'],
+                            'Nivel Información': row.get('Nivel Información ', ''),
+                            'Funcionario': row.get('Funcionario', ''),
+                            'Tipo Alerta': 'Análisis y cronograma',
+                            'Fecha Programada': fecha_plazo_cronograma,
+                            'Fecha Real': None,
+                            'Días Rezago': -dias_restantes,  # Negativo indica días por vencer
+                            'Estado': 'Próximo a vencer',
+                            'Descripción': f'Plazo de cronograma vence en {dias_restantes} días hábiles'
+                        })
 
-            # 3. Estándares
-            if fecha_estandares_prog is not None and not pd.isna(fecha_estandares_prog):
-                if (fecha_estandares is None or pd.isna(fecha_estandares)) and es_vencido(fecha_estandares_prog):
-                    # Plazo vencido sin fecha real
-                    dias_rezago = calcular_dias_rezago(fecha_estandares_prog)
-                    registros_alertas.append({
-                        'Cod': row['Cod'],
-                        'Entidad': row['Entidad'],
-                        'Nivel Información': row.get('Nivel Información ', ''),
-                        'Funcionario': row.get('Funcionario', ''),
-                        'Tipo Alerta': 'Estándares',
-                        'Fecha Programada': fecha_estandares_prog,
-                        'Fecha Real': None,
-                        'Días Rezago': dias_rezago,
-                        'Estado': 'Vencido',
-                        'Descripción': f'Plazo de estándares vencido hace {dias_rezago} días sin fecha real'
-                    })
-                elif (fecha_estandares is None or pd.isna(fecha_estandares)) and es_proximo_vencimiento(
-                        fecha_estandares_prog):
-                    # Próximo a vencer
-                    dias_restantes = calcular_dias_habiles(fecha_actual, fecha_estandares_prog)
-                    registros_alertas.append({
-                        'Cod': row['Cod'],
-                        'Entidad': row['Entidad'],
-                        'Nivel Información': row.get('Nivel Información ', ''),
-                        'Funcionario': row.get('Funcionario', ''),
-                        'Tipo Alerta': 'Estándares',
-                        'Fecha Programada': fecha_estandares_prog,
-                        'Fecha Real': None,
-                        'Días Rezago': -dias_restantes,  # Negativo indica días por vencer
-                        'Estado': 'Próximo a vencer',
-                        'Descripción': f'Plazo de estándares vence en {dias_restantes} días hábiles'
-                    })
-                elif fecha_estandares is not None and not pd.isna(
-                        fecha_estandares) and fecha_estandares > fecha_estandares_prog:
-                    # Completado con retraso
-                    dias_rezago = calcular_dias_habiles(fecha_estandares_prog, fecha_estandares)
-                    registros_alertas.append({
-                        'Cod': row['Cod'],
-                        'Entidad': row['Entidad'],
-                        'Nivel Información': row.get('Nivel Información ', ''),
-                        'Funcionario': row.get('Funcionario', ''),
-                        'Tipo Alerta': 'Estándares',
-                        'Fecha Programada': fecha_estandares_prog,
-                        'Fecha Real': fecha_estandares,
-                        'Días Rezago': dias_rezago,
-                        'Estado': 'Completado con retraso',
-                        'Descripción': f'Estándares completados con {dias_rezago} días hábiles de retraso'
-                    })
+            # 3. Estándares - mismo patrón de verificación mejorado
+            if fecha_estandares_prog is not None and pd.notna(fecha_estandares_prog):
+                if fecha_estandares is not None and pd.notna(fecha_estandares):
+                    # Hay fecha real, verificar si está con retraso
+                    if fecha_estandares > fecha_estandares_prog:
+                        dias_rezago = calcular_dias_habiles(fecha_estandares_prog, fecha_estandares)
+                        registros_alertas.append({
+                            'Cod': row['Cod'],
+                            'Entidad': row['Entidad'],
+                            'Nivel Información': row.get('Nivel Información ', ''),
+                            'Funcionario': row.get('Funcionario', ''),
+                            'Tipo Alerta': 'Estándares',
+                            'Fecha Programada': fecha_estandares_prog,
+                            'Fecha Real': fecha_estandares,
+                            'Días Rezago': dias_rezago,
+                            'Estado': 'Completado con retraso',
+                            'Descripción': f'Estándares completados con {dias_rezago} días hábiles de retraso'
+                        })
+                else:
+                    # No hay fecha real, verificar si está vencido o próximo
+                    if es_vencido(fecha_estandares_prog):
+                        dias_rezago = calcular_dias_rezago(fecha_estandares_prog)
+                        registros_alertas.append({
+                            'Cod': row['Cod'],
+                            'Entidad': row['Entidad'],
+                            'Nivel Información': row.get('Nivel Información ', ''),
+                            'Funcionario': row.get('Funcionario', ''),
+                            'Tipo Alerta': 'Estándares',
+                            'Fecha Programada': fecha_estandares_prog,
+                            'Fecha Real': None,
+                            'Días Rezago': dias_rezago,
+                            'Estado': 'Vencido',
+                            'Descripción': f'Plazo de estándares vencido hace {dias_rezago} días sin fecha real'
+                        })
+                    elif es_proximo_vencimiento(fecha_estandares_prog):
+                        dias_restantes = calcular_dias_habiles(fecha_actual, fecha_estandares_prog)
+                        registros_alertas.append({
+                            'Cod': row['Cod'],
+                            'Entidad': row['Entidad'],
+                            'Nivel Información': row.get('Nivel Información ', ''),
+                            'Funcionario': row.get('Funcionario', ''),
+                            'Tipo Alerta': 'Estándares',
+                            'Fecha Programada': fecha_estandares_prog,
+                            'Fecha Real': None,
+                            'Días Rezago': -dias_restantes,
+                            'Estado': 'Próximo a vencer',
+                            'Descripción': f'Plazo de estándares vence en {dias_restantes} días hábiles'
+                        })
 
-            # 4. Publicación
-            if fecha_publicacion_prog is not None and not pd.isna(fecha_publicacion_prog):
-                if (fecha_publicacion is None or pd.isna(fecha_publicacion)) and es_vencido(fecha_publicacion_prog):
-                    # Plazo vencido sin fecha real
-                    dias_rezago = calcular_dias_rezago(fecha_publicacion_prog)
-                    registros_alertas.append({
-                        'Cod': row['Cod'],
-                        'Entidad': row['Entidad'],
-                        'Nivel Información': row.get('Nivel Información ', ''),
-                        'Funcionario': row.get('Funcionario', ''),
-                        'Tipo Alerta': 'Publicación',
-                        'Fecha Programada': fecha_publicacion_prog,
-                        'Fecha Real': None,
-                        'Días Rezago': dias_rezago,
-                        'Estado': 'Vencido',
-                        'Descripción': f'Plazo de publicación vencido hace {dias_rezago} días sin fecha real'
-                    })
-                elif (fecha_publicacion is None or pd.isna(fecha_publicacion)) and es_proximo_vencimiento(
-                        fecha_publicacion_prog):
-                    # Próximo a vencer
-                    dias_restantes = calcular_dias_habiles(fecha_actual, fecha_publicacion_prog)
-                    registros_alertas.append({
-                        'Cod': row['Cod'],
-                        'Entidad': row['Entidad'],
-                        'Nivel Información': row.get('Nivel Información ', ''),
-                        'Funcionario': row.get('Funcionario', ''),
-                        'Tipo Alerta': 'Publicación',
-                        'Fecha Programada': fecha_publicacion_prog,
-                        'Fecha Real': None,
-                        'Días Rezago': -dias_restantes,  # Negativo indica días por vencer
-                        'Estado': 'Próximo a vencer',
-                        'Descripción': f'Plazo de publicación vence en {dias_restantes} días hábiles'
-                    })
-                elif fecha_publicacion is not None and not pd.isna(
-                        fecha_publicacion) and fecha_publicacion > fecha_publicacion_prog:
-                    # Completado con retraso
-                    dias_rezago = calcular_dias_habiles(fecha_publicacion_prog, fecha_publicacion)
-                    registros_alertas.append({
-                        'Cod': row['Cod'],
-                        'Entidad': row['Entidad'],
-                        'Nivel Información': row.get('Nivel Información ', ''),
-                        'Funcionario': row.get('Funcionario', ''),
-                        'Tipo Alerta': 'Publicación',
-                        'Fecha Programada': fecha_publicacion_prog,
-                        'Fecha Real': fecha_publicacion,
-                        'Días Rezago': dias_rezago,
-                        'Estado': 'Completado con retraso',
-                        'Descripción': f'Publicación realizada con {dias_rezago} días hábiles de retraso'
-                    })
+            # 4. Publicación - mismo patrón de verificación mejorado
+            if fecha_publicacion_prog is not None and pd.notna(fecha_publicacion_prog):
+                if fecha_publicacion is not None and pd.notna(fecha_publicacion):
+                    # Hay fecha real, verificar si está con retraso
+                    if fecha_publicacion > fecha_publicacion_prog:
+                        dias_rezago = calcular_dias_habiles(fecha_publicacion_prog, fecha_publicacion)
+                        registros_alertas.append({
+                            'Cod': row['Cod'],
+                            'Entidad': row['Entidad'],
+                            'Nivel Información': row.get('Nivel Información ', ''),
+                            'Funcionario': row.get('Funcionario', ''),
+                            'Tipo Alerta': 'Publicación',
+                            'Fecha Programada': fecha_publicacion_prog,
+                            'Fecha Real': fecha_publicacion,
+                            'Días Rezago': dias_rezago,
+                            'Estado': 'Completado con retraso',
+                            'Descripción': f'Publicación realizada con {dias_rezago} días hábiles de retraso'
+                        })
+                else:
+                    # No hay fecha real, verificar si está vencido o próximo
+                    if es_vencido(fecha_publicacion_prog):
+                        dias_rezago = calcular_dias_rezago(fecha_publicacion_prog)
+                        registros_alertas.append({
+                            'Cod': row['Cod'],
+                            'Entidad': row['Entidad'],
+                            'Nivel Información': row.get('Nivel Información ', ''),
+                            'Funcionario': row.get('Funcionario', ''),
+                            'Tipo Alerta': 'Publicación',
+                            'Fecha Programada': fecha_publicacion_prog,
+                            'Fecha Real': None,
+                            'Días Rezago': dias_rezago,
+                            'Estado': 'Vencido',
+                            'Descripción': f'Plazo de publicación vencido hace {dias_rezago} días sin fecha real'
+                        })
+                    elif es_proximo_vencimiento(fecha_publicacion_prog):
+                        dias_restantes = calcular_dias_habiles(fecha_actual, fecha_publicacion_prog)
+                        registros_alertas.append({
+                            'Cod': row['Cod'],
+                            'Entidad': row['Entidad'],
+                            'Nivel Información': row.get('Nivel Información ', ''),
+                            'Funcionario': row.get('Funcionario', ''),
+                            'Tipo Alerta': 'Publicación',
+                            'Fecha Programada': fecha_publicacion_prog,
+                            'Fecha Real': None,
+                            'Días Rezago': -dias_restantes,
+                            'Estado': 'Próximo a vencer',
+                            'Descripción': f'Plazo de publicación vence en {dias_restantes} días hábiles'
+                        })
 
-            # 5. Cierre
-            if fecha_plazo_oficio_cierre is not None and not pd.isna(fecha_plazo_oficio_cierre):
-                if (fecha_oficio_cierre is None or pd.isna(fecha_oficio_cierre)) and es_vencido(
-                        fecha_plazo_oficio_cierre):
-                    # Plazo vencido sin fecha real
-                    dias_rezago = calcular_dias_rezago(fecha_plazo_oficio_cierre)
-                    registros_alertas.append({
-                        'Cod': row['Cod'],
-                        'Entidad': row['Entidad'],
-                        'Nivel Información': row.get('Nivel Información ', ''),
-                        'Funcionario': row.get('Funcionario', ''),
-                        'Tipo Alerta': 'Cierre',
-                        'Fecha Programada': fecha_plazo_oficio_cierre,
-                        'Fecha Real': None,
-                        'Días Rezago': dias_rezago,
-                        'Estado': 'Vencido',
-                        'Descripción': f'Plazo de oficio de cierre vencido hace {dias_rezago} días sin fecha real'
-                    })
-                elif (fecha_oficio_cierre is None or pd.isna(fecha_oficio_cierre)) and es_proximo_vencimiento(
-                        fecha_plazo_oficio_cierre):
-                    # Próximo a vencer
-                    dias_restantes = calcular_dias_habiles(fecha_actual, fecha_plazo_oficio_cierre)
-                    registros_alertas.append({
-                        'Cod': row['Cod'],
-                        'Entidad': row['Entidad'],
-                        'Nivel Información': row.get('Nivel Información ', ''),
-                        'Funcionario': row.get('Funcionario', ''),
-                        'Tipo Alerta': 'Cierre',
-                        'Fecha Programada': fecha_plazo_oficio_cierre,
-                        'Fecha Real': None,
-                        'Días Rezago': -dias_restantes,  # Negativo indica días por vencer
-                        'Estado': 'Próximo a vencer',
-                        'Descripción': f'Plazo de oficio de cierre vence en {dias_restantes} días hábiles'
-                    })
-                elif fecha_oficio_cierre is not None and not pd.isna(
-                        fecha_oficio_cierre) and fecha_oficio_cierre > fecha_plazo_oficio_cierre:
-                    # Completado con retraso
-                    dias_rezago = calcular_dias_habiles(fecha_plazo_oficio_cierre, fecha_oficio_cierre)
-                    registros_alertas.append({
-                        'Cod': row['Cod'],
-                        'Entidad': row['Entidad'],
-                        'Nivel Información': row.get('Nivel Información ', ''),
-                        'Funcionario': row.get('Funcionario', ''),
-                        'Tipo Alerta': 'Cierre',
-                        'Fecha Programada': fecha_plazo_oficio_cierre,
-                        'Fecha Real': fecha_oficio_cierre,
-                        'Días Rezago': dias_rezago,
-                        'Estado': 'Completado con retraso',
-                        'Descripción': f'Oficio de cierre realizado con {dias_rezago} días hábiles de retraso'
-                    })
+            # 5. Cierre - mismo patrón de verificación mejorado
+            if fecha_plazo_oficio_cierre is not None and pd.notna(fecha_plazo_oficio_cierre):
+                if fecha_oficio_cierre is not None and pd.notna(fecha_oficio_cierre):
+                    # Hay fecha real, verificar si está con retraso
+                    if fecha_oficio_cierre > fecha_plazo_oficio_cierre:
+                        dias_rezago = calcular_dias_habiles(fecha_plazo_oficio_cierre, fecha_oficio_cierre)
+                        registros_alertas.append({
+                            'Cod': row['Cod'],
+                            'Entidad': row['Entidad'],
+                            'Nivel Información': row.get('Nivel Información ', ''),
+                            'Funcionario': row.get('Funcionario', ''),
+                            'Tipo Alerta': 'Cierre',
+                            'Fecha Programada': fecha_plazo_oficio_cierre,
+                            'Fecha Real': fecha_oficio_cierre,
+                            'Días Rezago': dias_rezago,
+                            'Estado': 'Completado con retraso',
+                            'Descripción': f'Oficio de cierre realizado con {dias_rezago} días hábiles de retraso'
+                        })
+                else:
+                    # No hay fecha real, verificar si está vencido o próximo
+                    if es_vencido(fecha_plazo_oficio_cierre):
+                        dias_rezago = calcular_dias_rezago(fecha_plazo_oficio_cierre)
+                        registros_alertas.append({
+                            'Cod': row['Cod'],
+                            'Entidad': row['Entidad'],
+                            'Nivel Información': row.get('Nivel Información ', ''),
+                            'Funcionario': row.get('Funcionario', ''),
+                            'Tipo Alerta': 'Cierre',
+                            'Fecha Programada': fecha_plazo_oficio_cierre,
+                            'Fecha Real': None,
+                            'Días Rezago': dias_rezago,
+                            'Estado': 'Vencido',
+                            'Descripción': f'Plazo de oficio de cierre vencido hace {dias_rezago} días sin fecha real'
+                        })
+                    elif es_proximo_vencimiento(fecha_plazo_oficio_cierre):
+                        dias_restantes = calcular_dias_habiles(fecha_actual, fecha_plazo_oficio_cierre)
+                        registros_alertas.append({
+                            'Cod': row['Cod'],
+                            'Entidad': row['Entidad'],
+                            'Nivel Información': row.get('Nivel Información ', ''),
+                            'Funcionario': row.get('Funcionario', ''),
+                            'Tipo Alerta': 'Cierre',
+                            'Fecha Programada': fecha_plazo_oficio_cierre,
+                            'Fecha Real': None,
+                            'Días Rezago': -dias_restantes,
+                            'Estado': 'Próximo a vencer',
+                            'Descripción': f'Plazo de oficio de cierre vence en {dias_restantes} días hábiles'
+                        })
         except Exception as e:
             st.warning(f"Error procesando registro {row['Cod']}: {e}")
             continue
