@@ -2328,75 +2328,76 @@ def main():
         # Agregar columna de estado de fechas
         registros_df['Estado Fechas'] = registros_df.apply(verificar_estado_fechas, axis=1)
 
-        # Filtros en la barra lateral
-        st.sidebar.markdown('<div class="subtitle">Filtros</div>', unsafe_allow_html=True)
-
-        # Filtro por entidad
-        entidades = ['Todas'] + sorted(registros_df['Entidad'].unique().tolist())
-        entidad_seleccionada = st.sidebar.selectbox('Entidad', entidades)
-
-        # Filtro por registros - Activado solo cuando se selecciona una entidad específica
-        if entidad_seleccionada != 'Todas':
-            # Filtrar registros_df por la entidad seleccionada
-            registros_entidad = registros_df[registros_df['Entidad'] == entidad_seleccionada]
-
-            # Crear opciones para el selector de registros específicos de esta entidad
-            codigos_registros = registros_entidad['Cod'].astype(str).tolist()
-            niveles_registros = registros_entidad['Nivel Información '].tolist()
-
-            # Combinar información para mostrar en el selector
-            opciones_registros = [f"{codigos_registros[i]} - {niveles_registros[i]}"
-                                  for i in range(len(codigos_registros))]
-
-            # Añadir opción para "Todos los registros" de esta entidad
-            opciones_registros = ['Todos los registros'] + opciones_registros
-
-            # Agregar selector de registro específico
-            registro_seleccionado = st.sidebar.selectbox(
-                "Registro específico",
-                options=opciones_registros,
-                key="selector_registro_filtro"
-            )
-        else:
-            # Si no se selecciona una entidad específica, no se muestra el filtro de registros
-            registro_seleccionado = 'Todos los registros'
-
-        # Filtro por funcionario
-        funcionarios = ['Todos']
-        if 'Funcionario' in registros_df.columns:
-            funcionarios += sorted(registros_df['Funcionario'].dropna().unique().tolist())
-        funcionario_seleccionado = st.sidebar.selectbox('Funcionario', funcionarios)
-
-        # Filtro por tipo de dato - NUEVA FUNCIONALIDAD
-        tipos_dato = ['Todos'] + sorted(registros_df['TipoDato'].dropna().unique().tolist())
-        tipo_dato_seleccionado = st.sidebar.selectbox('Tipo de Dato', tipos_dato)
-        
-        # Aplicar filtros
-        df_filtrado = registros_df.copy()
-
-        if entidad_seleccionada != 'Todas':
-            df_filtrado = df_filtrado[df_filtrado['Entidad'] == entidad_seleccionada]
-
-            # Aplicar filtro por registro específico si se seleccionó uno
-            if registro_seleccionado != 'Todos los registros':
-                # Extraer el código del registro de la opción seleccionada
-                codigo_registro = registro_seleccionado.split(' - ')[0]
-                df_filtrado = df_filtrado[df_filtrado['Cod'].astype(str) == codigo_registro]
-
-        if funcionario_seleccionado != 'Todos' and 'Funcionario' in df_filtrado.columns:
-            df_filtrado = df_filtrado[df_filtrado['Funcionario'] == funcionario_seleccionado]
-
-        # Aplicar filtro por tipo de dato - NUEVA FUNCIONALIDAD
-        if tipo_dato_seleccionado != 'Todos':
-            df_filtrado = df_filtrado[df_filtrado['TipoDato'].str.upper() == tipo_dato_seleccionado.upper()]
-
         # Crear pestañas - MODIFICADO: Cambio de "Datos Completos" a "Edición de Registros"
         # Cambiar la declaración de pestañas
         tab1, tab2, tab3 = st.tabs(["Dashboard", "Edición de Registros", "Alertas de Vencimientos"])
 
 
         with tab1:
-            mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registros_df)
+        with tab1:
+            # Filtros en la barra lateral (solo para Dashboard)
+            st.sidebar.markdown('<div class="subtitle">Filtros Dashboard</div>', unsafe_allow_html=True)
+        
+            # Filtro por entidad
+            entidades = ['Todas'] + sorted(registros_df['Entidad'].unique().tolist())
+            entidad_seleccionada = st.sidebar.selectbox('Entidad', entidades)
+        
+            # Filtro por registros - Activado solo cuando se selecciona una entidad específica
+            if entidad_seleccionada != 'Todas':
+                # Filtrar registros_df por la entidad seleccionada
+                registros_entidad = registros_df[registros_df['Entidad'] == entidad_seleccionada]
+        
+                # Crear opciones para el selector de registros específicos de esta entidad
+                codigos_registros = registros_entidad['Cod'].astype(str).tolist()
+                niveles_registros = registros_entidad['Nivel Información '].tolist()
+        
+                # Combinar información para mostrar en el selector
+                opciones_registros = [f"{codigos_registros[i]} - {niveles_registros[i]}"
+                                      for i in range(len(codigos_registros))]
+        
+                # Añadir opción para "Todos los registros" de esta entidad
+                opciones_registros = ['Todos los registros'] + opciones_registros
+        
+                # Agregar selector de registro específico
+                registro_seleccionado = st.sidebar.selectbox(
+                    "Registro específico",
+                    options=opciones_registros,
+                    key="selector_registro_filtro"
+                )
+            else:
+                # Si no se selecciona una entidad específica, no se muestra el filtro de registros
+                registro_seleccionado = 'Todos los registros'
+        
+            # Filtro por funcionario
+            funcionarios = ['Todos']
+            if 'Funcionario' in registros_df.columns:
+                funcionarios += sorted(registros_df['Funcionario'].dropna().unique().tolist())
+            funcionario_seleccionado = st.sidebar.selectbox('Funcionario', funcionarios)
+        
+            # Filtro por tipo de dato - NUEVA FUNCIONALIDAD
+            tipos_dato = ['Todos'] + sorted(registros_df['TipoDato'].dropna().unique().tolist())
+            tipo_dato_seleccionado = st.sidebar.selectbox('Tipo de Dato', tipos_dato)
+        
+            # Aplicar filtros
+            df_filtrado = registros_df.copy()
+        
+            if entidad_seleccionada != 'Todas':
+                df_filtrado = df_filtrado[df_filtrado['Entidad'] == entidad_seleccionada]
+        
+                # Aplicar filtro por registro específico si se seleccionó uno
+                if registro_seleccionado != 'Todos los registros':
+                    # Extraer el código del registro de la opción seleccionada
+                    codigo_registro = registro_seleccionado.split(' - ')[0]
+                    df_filtrado = df_filtrado[df_filtrado['Cod'].astype(str) == codigo_registro]
+        
+            if funcionario_seleccionado != 'Todos' and 'Funcionario' in df_filtrado.columns:
+                df_filtrado = df_filtrado[df_filtrado['Funcionario'] == funcionario_seleccionado]
+        
+            # Aplicar filtro por tipo de dato - NUEVA FUNCIONALIDAD
+            if tipo_dato_seleccionado != 'Todos':
+                df_filtrado = df_filtrado[df_filtrado['TipoDato'].str.upper() == tipo_dato_seleccionado.upper()]
+        
+            mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registros_df)    
 
         with tab2:
             registros_df = mostrar_edicion_registros(registros_df)
