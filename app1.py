@@ -2399,12 +2399,12 @@ def main():
         
             mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registros_df)    
 
+     
         with tab2:
             registros_df = mostrar_edicion_registros(registros_df)
-            # Añadir el código para la nueva pestaña
+
         with tab3:
             mostrar_alertas_vencimientos(registros_df)
-
         # Agregar sección de diagnóstico
         mostrar_diagnostico(registros_df, meta_df, metas_nuevas_df, metas_actualizar_df, df_filtrado)
 
