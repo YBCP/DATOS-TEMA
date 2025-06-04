@@ -2333,7 +2333,7 @@ def main():
         tab1, tab2, tab3 = st.tabs(["Dashboard", "Edición de Registros", "Alertas de Vencimientos"])
 
 
-        with tab1:
+        
         with tab1:
             # Filtros en la barra lateral (solo para Dashboard)
             st.sidebar.markdown('<div class="subtitle">Filtros Dashboard</div>', unsafe_allow_html=True)
