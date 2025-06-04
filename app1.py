@@ -2367,6 +2367,10 @@ def main():
             funcionarios += sorted(registros_df['Funcionario'].dropna().unique().tolist())
         funcionario_seleccionado = st.sidebar.selectbox('Funcionario', funcionarios)
 
+        # Filtro por tipo de dato - NUEVA FUNCIONALIDAD
+        tipos_dato = ['Todos'] + sorted(registros_df['TipoDato'].dropna().unique().tolist())
+        tipo_dato_seleccionado = st.sidebar.selectbox('Tipo de Dato', tipos_dato)
+        
         # Aplicar filtros
         df_filtrado = registros_df.copy()
 
@@ -2381,6 +2385,10 @@ def main():
 
         if funcionario_seleccionado != 'Todos' and 'Funcionario' in df_filtrado.columns:
             df_filtrado = df_filtrado[df_filtrado['Funcionario'] == funcionario_seleccionado]
+
+        # Aplicar filtro por tipo de dato - NUEVA FUNCIONALIDAD
+        if tipo_dato_seleccionado != 'Todos':
+            df_filtrado = df_filtrado[df_filtrado['TipoDato'].str.upper() == tipo_dato_seleccionado.upper()]
 
         # Crear pestañas - MODIFICADO: Cambio de "Datos Completos" a "Edición de Registros"
         # Cambiar la declaración de pestañas
