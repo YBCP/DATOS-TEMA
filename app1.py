@@ -43,6 +43,36 @@ def highlight_estado_fechas(s):
         return ['background-color: #ffffff'] * len(s)
 
 
+# Función de callback para manejar cambios
+def on_change_callback():
+    """Callback para marcar que hay cambios pendientes."""
+    st.session_state.cambios_pendientes = True
+
+
+# Función para convertir fecha para mostrar en selectores de fecha
+def fecha_para_selector(fecha_str):
+    """Convierte una fecha en string a un objeto datetime para el selector."""
+    if not fecha_str or pd.isna(fecha_str) or fecha_str == '':
+        return None
+
+    try:
+        fecha = procesar_fecha(fecha_str)
+        if fecha is not None:
+            return fecha
+    except:
+        pass
+
+    return None
+
+
+# Función para formatear fecha desde el selector para guardar en DataFrame
+def fecha_desde_selector_a_string(fecha):
+    """Convierte un objeto datetime del selector a string con formato DD/MM/AAAA."""
+    if fecha is None:
+        return ""
+    return fecha.strftime('%d/%m/%Y')
+
+
 def mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registros_df):
     """Muestra el dashboard principal con métricas y gráficos."""
     # Mostrar métricas generales
@@ -255,34 +285,139 @@ def mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registr
         st.dataframe(df_filtrado[columnas_mostrar_existentes])
 
 
-# Función de callback para manejar cambios
-def on_change_callback():
-    """Callback para marcar que hay cambios pendientes."""
-    st.session_state.cambios_pendientes = True
+def mostrar_edicion_registros(registros_df):
+    """Muestra la pestaña de edición de registros."""
+    st.markdown('<div class="subtitle">Edición de Registros</div>', unsafe_allow_html=True)
 
+    st.info(
+        "Esta sección permite editar los datos usando selectores de fecha y opciones. Los cambios se guardan automáticamente al hacer modificaciones.")
 
-# Función para convertir fecha para mostrar en selectores de fecha
-def fecha_para_selector(fecha_str):
-    """Convierte una fecha en string a un objeto datetime para el selector."""
-    if not fecha_str or pd.isna(fecha_str) or fecha_str == '':
-        return None
+    # Explicación adicional sobre las fechas y reglas de validación
+    st.warning("""
+    **Importante**: 
+    - Para los campos de fecha, utilice el selector de calendario que aparece.
+    - El campo "Plazo de análisis" se calcula automáticamente como 5 días hábiles después de la "Fecha de entrega de información", sin contar fines de semana ni festivos.
+    - El campo "Plazo de cronograma" se calcula automáticamente como 3 días hábiles después del "Plazo de análisis", sin contar fines de semana ni festivos.
+    - El campo "Plazo de oficio de cierre" se calcula automáticamente como 7 días hábiles después de la fecha real de "Publicación", sin contar fines de semana ni festivos.
+    - Se aplicarán automáticamente las siguientes validaciones:
+        1. Si 'Entrega acuerdo de compromiso' no está vacío, 'Acuerdo de compromiso' se actualizará a 'SI'
+        2. Si 'Análisis y cronograma' tiene fecha, 'Análisis de información' se actualizará a 'SI'
+        3. Si introduce fecha en 'Estándares', se verificará que los campos 'Registro (completo)', 'ET (completo)', 'CO (completo)', 'DD (completo)', 'REC (completo)' y 'SERVICIO (completo)' estén 'Completo'
+        4. Si introduce fecha en 'Publicación', se verificará que 'Disponer datos temáticos' sea 'SI'
+        5. Si 'Disponer datos temáticos' se marca como 'No', se eliminará la fecha de 'Publicación' si existe.
+        6. Para introducir una fecha en 'Fecha de oficio de cierre', todos los campos Si/No deben estar marcados como 'Si', todos los estándares deben estar 'Completo' y todas las fechas diligenciadas y anteriores a la fecha de cierre.
+        7. Al introducir una fecha en 'Fecha de oficio de cierre', el campo 'Estado' se actualizará automáticamente a 'Completado'.
+        8. Si se modifica algún campo de forma que ya no cumpla con las reglas para 'Fecha de oficio de cierre', esta fecha se borrará automáticamente.
+        9. Solo los registros con 'Fecha de oficio de cierre' válida pueden tener estado 'Completado'.
+    """)
+    
+    # Mostrar mensaje de guardado si existe
+    if st.session_state.mensaje_guardado:
+        if st.session_state.mensaje_guardado[0] == "success":
+            st.success(st.session_state.mensaje_guardado[1])
+        else:
+            st.error(st.session_state.mensaje_guardado[1])
+        # Limpiar mensaje después de mostrarlo
+        st.session_state.mensaje_guardado = None
 
+    st.markdown("### Edición Individual de Registros")
+
+    # Selector de registro - mostrar lista completa de registros para seleccionar
+    codigos_registros = registros_df['Cod'].astype(str).tolist()
+    entidades_registros = registros_df['Entidad'].tolist()
+    niveles_registros = registros_df['Nivel Información '].tolist()
+
+    # Crear opciones para el selector combinando información
+    opciones_registros = [f"{codigos_registros[i]} - {entidades_registros[i]} - {niveles_registros[i]}"
+                          for i in range(len(codigos_registros))]
+
+    # Agregar el selector de registro
+    seleccion_registro = st.selectbox(
+        "Seleccione un registro para editar:",
+        options=opciones_registros,
+        key="selector_registro"
+    )
+
+    # Obtener el índice del registro seleccionado
+    indice_seleccionado = opciones_registros.index(seleccion_registro)
+
+    # Mostrar el registro seleccionado para edición
     try:
-        fecha = procesar_fecha(fecha_str)
-        if fecha is not None:
-            return fecha
-    except:
-        pass
+        # Obtener el registro seleccionado
+        row = registros_df.iloc[indice_seleccionado].copy()
 
-    return None
+        # Flag para detectar cambios
+        edited = False
 
+        # Contenedor para los datos de edición
+        with st.container():
+            st.markdown("---")
+            # Título del registro
+            st.markdown(f"### Editando Registro #{row['Cod']} - {row['Entidad']}")
+            st.markdown(f"**Nivel de Información:** {row['Nivel Información ']}")
+            st.markdown("---")
 
-# Función para formatear fecha desde el selector para guardar en DataFrame
-def fecha_desde_selector_a_string(fecha):
-    """Convierte un objeto datetime del selector a string con formato DD/MM/AAAA."""
-    if fecha is None:
-        return ""
-    return fecha.strftime('%d/%m/%Y')
+            # SECCIÓN 1: INFORMACIÓN BÁSICA
+            st.markdown("### 1. Información Básica")
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                # Campos no editables
+                st.text_input("Código", value=row['Cod'], disabled=True)
+
+            with col2:
+                # Tipo de Dato
+                nuevo_tipo = st.selectbox(
+                    "Tipo de Dato",
+                    options=["Nuevo", "Actualizar"],
+                    index=0 if row['TipoDato'].upper() == "NUEVO" else 1,
+                    key=f"tipo_{indice_seleccionado}",
+                    on_change=on_change_callback
+                )
+                if nuevo_tipo != row['TipoDato']:
+                    registros_df.at[registros_df.index[indice_seleccionado], 'TipoDato'] = nuevo_tipo
+                    edited = True
+
+            with col3:
+                # Nivel de Información
+                nuevo_nivel = st.text_input(
+                    "Nivel de Información",
+                    value=row['Nivel Información '] if pd.notna(row['Nivel Información ']) else "",
+                    key=f"nivel_info_{indice_seleccionado}",
+                    on_change=on_change_callback
+                )
+                if nuevo_nivel != row['Nivel Información ']:
+                    registros_df.at[registros_df.index[indice_seleccionado], 'Nivel Información '] = nuevo_nivel
+                    edited = True
+
+            # Mostrar botón de guardar si se han hecho cambios
+            if edited or st.session_state.cambios_pendientes:
+                if st.button("Guardar Todos los Cambios", key=f"guardar_{indice_seleccionado}"):
+                    # Aplicar validaciones de reglas de negocio antes de guardar
+                    registros_df = validar_reglas_negocio(registros_df)
+
+                    # Actualizar el plazo de análisis después de los cambios
+                    registros_df = actualizar_plazo_analisis(registros_df)
+
+                    # Actualizar el plazo de oficio de cierre después de los cambios
+                    registros_df = actualizar_plazo_oficio_cierre(registros_df)
+
+                    # Guardar los datos en el archivo
+                    exito, mensaje = guardar_datos_editados(registros_df)
+
+                    if exito:
+                        st.session_state.mensaje_guardado = ("success", mensaje)
+                        st.session_state.cambios_pendientes = False
+
+                        # Recargar la página para mostrar los cambios actualizados
+                        st.rerun()
+                    else:
+                        st.session_state.mensaje_guardado = ("error", mensaje)
+
+    except Exception as e:
+        st.error(f"Error al editar el registro: {e}")
+
+    return registros_df
 
 
 def mostrar_alertas_vencimientos(registros_df):
@@ -292,10 +427,7 @@ def mostrar_alertas_vencimientos(registros_df):
     # Fecha actual para comparaciones
     fecha_actual = datetime.now().date()
 
-    # [Aquí iría el código completo de alertas que ya existe]
-    # Por brevedad, incluyo solo la estructura principal
-    
-    st.info("Funcionalidad de alertas implementada - código completo disponible en el archivo original")
+    st.info("Funcionalidad de alertas de vencimientos - Aquí se mostrarían las alertas de fechas próximas a vencer o vencidas.")
 
 
 def main():
@@ -566,6 +698,20 @@ def main():
         if funcionario_seleccionado != 'Todos' and 'Funcionario' in df_filtrado.columns:
             df_filtrado = df_filtrado[df_filtrado['Funcionario'] == funcionario_seleccionado]
 
+        # Mostrar validaciones
+        with st.expander("Validación de Reglas de Negocio"):
+            st.markdown("### Estado de Validaciones")
+            st.info("""
+            Se aplican las siguientes reglas de validación:
+            1. Si 'Entrega acuerdo de compromiso' no está vacío, 'Acuerdo de compromiso' se actualiza a 'SI'
+            2. Si 'Análisis y cronograma' tiene fecha, 'Análisis de información' se actualiza a 'SI'
+            3. Si se introduce fecha en 'Estándares', se verifica que los campos con sufijo (completo) estén 'Completo'
+            4. Si se introduce fecha en 'Publicación', se verifica que 'Disponer datos temáticos' sea 'SI'
+            5. Para introducir una fecha en 'Fecha de oficio de cierre', todos los campos Si/No deben estar marcados como 'Si', todos los estándares deben estar 'Completo' y todas las fechas diligenciadas.
+            6. Al introducir una fecha en 'Fecha de oficio de cierre', el campo 'Estado' se actualizará automáticamente a 'Completado'.
+            """)
+            mostrar_estado_validaciones(registros_df, st)
+
         # CREAR PESTAÑAS
         tab1, tab2, tab3 = st.tabs(["Dashboard", "Edición de Registros", "Alertas de Vencimientos"])
 
@@ -580,6 +726,14 @@ def main():
 
     except Exception as e:
         st.error(f"Error al cargar o procesar los datos: {e}")
+        st.info("""
+        Por favor, verifique lo siguiente:
+        1. Los archivos CSV están correctamente formateados.
+        2. Las columnas requeridas están presentes en los archivos.
+        3. Los valores de fecha tienen el formato correcto (DD/MM/AAAA).
+
+        Si el problema persiste, contacte al administrador del sistema.
+        """)
 
 
 if __name__ == "__main__":
