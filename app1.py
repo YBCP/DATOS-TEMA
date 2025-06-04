@@ -2381,7 +2381,25 @@ def main():
             registros_df = mostrar_edicion_registros(registros_df)
 
         with tab3:
-            mostrar_alertas_vencimientos(registros_df)
+            # FILTRO PARA ALERTAS
+            st.markdown("### 🔍 Filtro")
+            col1, col2, col3 = st.columns([1, 1, 2])
+            
+            with col1:
+                # Filtro por tipo de dato
+                tipos_dato_alertas = ['Todos'] + sorted(registros_df['TipoDato'].dropna().unique().tolist())
+                tipo_dato_alertas = st.selectbox('Tipo de Dato', tipos_dato_alertas, key="alertas_tipo")
+            
+            # Aplicar filtro
+            df_filtrado_alertas = registros_df.copy()
+            
+            if tipo_dato_alertas != 'Todos':
+                df_filtrado_alertas = df_filtrado_alertas[df_filtrado_alertas['TipoDato'].str.upper() == tipo_dato_alertas.upper()]
+            
+            st.markdown("---")  # Separador visual
+    
+            mostrar_alertas_vencimientos(df_filtrado_alertas)
+        
         # Agregar sección de diagnóstico
         mostrar_diagnostico(registros_df, meta_df, metas_nuevas_df, metas_actualizar_df, df_filtrado)
 
