@@ -231,12 +231,13 @@ def verificar_completado_por_fecha(fecha_programada, fecha_completado=None):
     return False
 
 
+
 def calcular_porcentaje_avance(registro):
     """
     MODIFICADO: Calcula el porcentaje de avance de un registro basado en los campos de completitud.
-    Ahora considera "No aplica" como un estado válido (equivalente a "Completo").
+    NUEVA REGLA: Si tiene fecha de oficio de cierre, automáticamente 100% de avance.
 
-    Ponderación:
+    Ponderación (cuando no hay fecha de cierre):
     - Acuerdo de compromiso: 20%
     - Análisis y cronograma (fecha real): 20%
     - Estándares (fecha real): 30%
@@ -244,6 +245,14 @@ def calcular_porcentaje_avance(registro):
     - Fecha de oficio de cierre: 5%
     """
     try:
+        # NUEVA REGLA: Si tiene fecha de oficio de cierre, automáticamente 100%
+        if ('Fecha de oficio de cierre' in registro and 
+            registro['Fecha de oficio de cierre'] and 
+            pd.notna(registro['Fecha de oficio de cierre']) and
+            str(registro['Fecha de oficio de cierre']).strip() != ''):
+            return 100
+
+        # Si no hay fecha de cierre, calcular normalmente
         # Inicializar el avance
         avance = 0
 
@@ -255,27 +264,35 @@ def calcular_porcentaje_avance(registro):
                                                                                                               'COMPLETO']:
             avance += 20
 
-        # Verificar análisis y cronograma - basado solo en la fecha (20%)
-        if 'Análisis y cronograma' in registro and registro['Análisis y cronograma'] and pd.notna(
-                registro['Análisis y cronograma']):
+        # Verificar análisis y cronograma - VERIFICADO: basado en la fecha (20%)
+        if ('Análisis y cronograma' in registro and 
+            registro['Análisis y cronograma'] and 
+            pd.notna(registro['Análisis y cronograma']) and
+            str(registro['Análisis y cronograma']).strip() != ''):
             avance += 20
 
-        # Verificar estándares - basado en la fecha (30%)
-        if 'Estándares' in registro and registro['Estándares'] and pd.notna(registro['Estándares']):
+        # Verificar estándares - VERIFICADO: basado en la fecha (30%)
+        if ('Estándares' in registro and 
+            registro['Estándares'] and 
+            pd.notna(registro['Estándares']) and
+            str(registro['Estándares']).strip() != ''):
             avance += 30
 
-        # Verificar publicación - basado en la fecha (25%)
-        if 'Publicación' in registro and registro['Publicación'] and pd.notna(registro['Publicación']):
+        # Verificar publicación - VERIFICADO: basado en la fecha (25%)
+        if ('Publicación' in registro and 
+            registro['Publicación'] and 
+            pd.notna(registro['Publicación']) and
+            str(registro['Publicación']).strip() != ''):
             avance += 25
 
-        # Verificar fecha de oficio de cierre (5%)
-        if 'Fecha de oficio de cierre' in registro and registro['Fecha de oficio de cierre'] and pd.notna(
-                registro['Fecha de oficio de cierre']):
-            avance += 5
+        # Nota: No sumamos los 5% del oficio de cierre aquí porque si llegáramos a este punto
+        # significa que no hay fecha de cierre, por lo que el máximo sería 95%
 
         return avance
     except Exception as e:
         # En caso de error, retornar 0
+        import streamlit as st
+        st.warning(f"Error al calcular porcentaje de avance: {e}")
         return 0
         
 def procesar_metas(meta_df):
