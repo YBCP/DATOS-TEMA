@@ -305,7 +305,7 @@ def mostrar_edicion_registros(registros_df):
         3. Al introducir fecha en 'Estándares', los campos que no estén 'Completo' se actualizarán automáticamente a 'No aplica'
         4. Si introduce fecha en 'Publicación', 'Disponer datos temáticos' se actualizará automáticamente a 'SI'
         5. Para introducir una fecha en 'Fecha de oficio de cierre', debe tener la etapa de Publicación completada (con fecha)
-        6. Al introducir una fecha en 'Fecha de oficio de cierre', el campo 'Estado' se actualizará automáticamente a 'Completado' y el avance al 100%
+        6. Al introducir una fecha en 'Fecha de oficio de cierre', el campo 'Estado' se actualizará automáticamente a 'Completado'
         7. Si se elimina la fecha de oficio de cierre, el Estado se cambiará automáticamente a 'En proceso'
     """)
     # Mostrar mensaje de guardado si existe
@@ -934,13 +934,6 @@ def mostrar_edicion_registros(registros_df):
                     if disponer_datos != row['Disponer datos temáticos']:
                         registros_df.at[
                             registros_df.index[indice_seleccionado], 'Disponer datos temáticos'] = disponer_datos
-
-                        # Si se cambia a "No", limpiar la fecha de publicación
-                        if disponer_datos.upper() == "NO" and 'Publicación' in registros_df.columns:
-                            registros_df.at[registros_df.index[indice_seleccionado], 'Publicación'] = ""
-                            st.warning(
-                                "Se ha eliminado la fecha de publicación porque 'Disponer datos temáticos' se marcó como 'No'.")
-
                         edited = True
 
                         # Guardar cambios inmediatamente para validar reglas de negocio
@@ -2419,55 +2412,6 @@ def mostrar_error(error):
     """)
 
 
-# Función actualizada para calcular porcentaje de avance (considera "No aplica" como válido)
-def calcular_porcentaje_avance_actualizado(registro):
-    """
-    Calcula el porcentaje de avance de un registro basado en los campos de completitud.
-    Considera "No aplica" como un estado válido (equivalente a "Completo").
-
-    Ponderación:
-    - Acuerdo de compromiso: 20%
-    - Análisis y cronograma (fecha real): 20%
-    - Estándares (fecha real): 30%
-    - Publicación (fecha real): 25%
-    - Fecha de oficio de cierre: 5%
-    """
-    try:
-        # Inicializar el avance
-        avance = 0
-
-        # Verificar el acuerdo de compromiso (20%)
-        if 'Acuerdo de compromiso' in registro and str(registro['Acuerdo de compromiso']).strip().upper() in ['SI',
-                                                                                                              'SÍ', 'S',
-                                                                                                              'YES',
-                                                                                                              'Y',
-                                                                                                              'COMPLETO']:
-            avance += 20
-
-        # Verificar análisis y cronograma - basado solo en la fecha (20%)
-        if 'Análisis y cronograma' in registro and registro['Análisis y cronograma'] and pd.notna(
-                registro['Análisis y cronograma']):
-            avance += 20
-
-        # Verificar estándares - basado en la fecha (30%)
-        if 'Estándares' in registro and registro['Estándares'] and pd.notna(registro['Estándares']):
-            avance += 30
-
-        # Verificar publicación - basado en la fecha (25%)
-        if 'Publicación' in registro and registro['Publicación'] and pd.notna(registro['Publicación']):
-            avance += 25
-
-        # Verificar fecha de oficio de cierre (5%)
-        if 'Fecha de oficio de cierre' in registro and registro['Fecha de oficio de cierre'] and pd.notna(
-                registro['Fecha de oficio de cierre']):
-            avance += 5
-
-        return avance
-    except Exception as e:
-        # En caso de error, retornar 0
-        return 0
-
-
 def main():
     try:
         # Inicializar estado de sesión para registro de cambios
@@ -2598,7 +2542,7 @@ def main():
             registros_df[columna] = registros_df[columna].astype(str)
 
         # Agregar columna de porcentaje de avance
-        registros_df['Porcentaje Avance'] = registros_df.apply(calcular_porcentaje_avance_actualizado, axis=1)
+        registros_df['Porcentaje Avance'] = registros_df.apply(calcular_porcentaje_avance, axis=1)
 
         # Agregar columna de estado de fechas
         registros_df['Estado Fechas'] = registros_df.apply(verificar_estado_fechas, axis=1)
