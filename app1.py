@@ -23,6 +23,275 @@ from data_utils import (
 from visualization import crear_gantt, comparar_avance_metas
 from constants import REGISTROS_DATA, META_DATA
 
+# ===== FUNCIONES DE AUTENTICACIÓN =====
+def verificar_admin():
+    """
+    Verifica si el usuario está autenticado como administrador.
+    Retorna True si está autenticado, False si no.
+    """
+    # Inicializar estado de autenticación si no existe
+    if 'admin_authenticated' not in st.session_state:
+        st.session_state.admin_authenticated = False
+    
+    return st.session_state.admin_authenticated
+
+
+def mostrar_login_admin():
+    """
+    Muestra el formulario de login para admin y maneja la autenticación.
+    """
+    st.sidebar.markdown("**🔐 Acceso Administrador**")
+    st.sidebar.markdown("*Requerido para gestión de datos*")
+    
+    # Formulario de contraseña
+    password = st.sidebar.text_input(
+        "Contraseña de administrador:",
+        type="password",
+        key="admin_password",
+        help="Ingrese la contraseña de administrador"
+    )
+    
+    if st.sidebar.button("🔓 Acceder", key="login_btn", use_container_width=True):
+        if password == "qwerty":
+            st.session_state.admin_authenticated = True
+            st.sidebar.success("✅ Acceso concedido")
+            st.rerun()
+        else:
+            st.sidebar.error("❌ Contraseña incorrecta")
+
+
+def mostrar_gestion_datos_admin(registros_df):
+    """
+    Muestra la sección de gestión de datos Excel solo para administradores autenticados.
+    """
+    st.sidebar.markdown("**📊 Gestión de Datos - ADMIN**")
+    st.sidebar.success("🔓 Acceso autorizado")
+    
+    # Descargar template Excel
+    st.sidebar.markdown("**📥 Descargar Template**")
+    
+    # Crear archivo Excel con todos los datos actuales como template
+    output_template = io.BytesIO()
+    with pd.ExcelWriter(output_template, engine='openpyxl') as writer:
+        # Hoja principal con todos los registros
+        registros_df.to_excel(writer, sheet_name='Registros', index=False)
+        
+        # Hoja con ejemplo de estructura (solo las primeras 3 filas como ejemplo)
+        if len(registros_df) > 0:
+            ejemplo_df = registros_df.head(3).copy()
+            # Limpiar las fechas del ejemplo para que sea un template limpio
+            columnas_fecha = [
+                'Suscripción acuerdo de compromiso', 'Entrega acuerdo de compromiso',
+                'Fecha de entrega de información', 'Plazo de análisis', 'Plazo de cronograma',
+                'Análisis y cronograma', 'Estándares (fecha programada)', 'Estándares',
+                'Fecha de publicación programada', 'Publicación',
+                'Plazo de oficio de cierre', 'Fecha de oficio de cierre'
+            ]
+            for col in columnas_fecha:
+                if col in ejemplo_df.columns:
+                    ejemplo_df[col] = ""
+            
+            ejemplo_df.to_excel(writer, sheet_name='Template_Ejemplo', index=False)
+        
+        # Hoja de instrucciones
+        instrucciones = pd.DataFrame({
+            'INSTRUCCIONES PARA USO DEL TEMPLATE': [
+                '1. Use la hoja "Registros" para editar todos los datos',
+                '2. NO modifique la estructura de columnas',
+                '3. Fechas deben estar en formato DD/MM/AAAA',
+                '4. Campos Si/No: use "Si" o "No" exactamente',
+                '5. Estándares (completo): use "Sin iniciar", "En proceso" o "Completo"',
+                '6. NO modifique la columna "Cod" (código único)',
+                '7. Guarde el archivo y súbalo usando el botón "Cargar Datos"',
+                '',
+                'CAMPOS CALCULADOS AUTOMÁTICAMENTE:',
+                '- Plazo de análisis (5 días hábiles después de entrega info)',
+                '- Plazo de cronograma (3 días hábiles después de plazo análisis)',
+                '- Plazo de oficio de cierre (7 días hábiles después de publicación)',
+                '',
+                'VALIDACIONES AUTOMÁTICAS:',
+                '- Acuerdo compromiso = Si (si hay fecha entrega acuerdo)',
+                '- Análisis información = Si (si hay fecha análisis)',
+                '- Estado = Completado (si hay fecha oficio cierre)',
+                '- Las fechas de estándares requieren todos los campos "completo"',
+                '- Las fechas de publicación requieren "Disponer datos" = Si'
+            ]
+        })
+        instrucciones.to_excel(writer, sheet_name='INSTRUCCIONES', index=False)
+
+    excel_template_data = output_template.getvalue()
+    
+    st.sidebar.download_button(
+        label="📊 Descargar Template Excel",
+        data=excel_template_data,
+        file_name=f"template_cronogramas_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help="Descarga todos los datos actuales en formato Excel para edición",
+        use_container_width=True
+    )
+    
+    # Cargar datos desde Excel
+    st.sidebar.markdown("**📤 Cargar Datos Editados**")
+    
+    uploaded_file = st.sidebar.file_uploader(
+        "Seleccionar archivo Excel editado",
+        type=['xlsx', 'xls'],
+        help="Suba el archivo Excel con los datos editados"
+    )
+    
+    if uploaded_file is not None:
+        try:
+            # Leer el archivo Excel cargado
+            df_cargado = pd.read_excel(uploaded_file, sheet_name='Registros')
+            
+            # Mostrar información del archivo cargado
+            st.sidebar.success(f"✅ Archivo cargado: {len(df_cargado)} registros")
+            
+            # Botón para confirmar la actualización - ARREGLANDO BLOQUEO
+            if st.sidebar.button("🔄 Actualizar Datos", type="primary", use_container_width=True):
+                try:
+                    # Validar que el archivo tenga las columnas necesarias
+                    columnas_requeridas = ['Cod', 'Entidad', 'TipoDato', 'Nivel Información ']
+                    columnas_faltantes = [col for col in columnas_requeridas if col not in df_cargado.columns]
+                    
+                    if columnas_faltantes:
+                        st.sidebar.error(f"❌ Columnas faltantes: {', '.join(columnas_faltantes)}")
+                    else:
+                        # Usar la función auxiliar para guardar con todas las validaciones
+                        exito, df_cargado = guardar_datos_con_validacion(
+                            df_cargado, 
+                            "Datos cargados desde Excel y guardados correctamente", 
+                            False
+                        )
+                        
+                        if exito:
+                            st.sidebar.success("✅ Datos actualizados correctamente desde Excel")
+                            st.sidebar.info("🔄 **Por favor, recargue manualmente la página para ver los cambios**")
+                            # ELIMINADO: Botón automático que causaba bloqueo
+                        else:
+                            st.sidebar.error("❌ Error al guardar los datos cargados")
+                            
+                except Exception as e:
+                    st.sidebar.error(f"❌ Error al procesar archivo: {str(e)}")
+                    
+        except Exception as e:
+            st.sidebar.error(f"❌ Error al leer archivo: {str(e)}")
+            st.sidebar.info("Verifique que el archivo tenga la hoja 'Registros' y esté bien formateado")
+    
+    # Botón para cerrar sesión de admin
+    if st.sidebar.button("🚪 Cerrar Sesión Admin", use_container_width=True):
+        st.session_state.admin_authenticated = False
+        st.sidebar.success("✅ Sesión de administrador cerrada")
+        st.rerun()
+
+
+# ===== FUNCIONES AUXILIARES =====
+def guardar_datos_con_validacion(registros_df, mensaje_exito="Datos guardados correctamente", mostrar_mensaje=True):
+    """
+    Función auxiliar que garantiza el guardado de datos con validaciones completas.
+    Aplica todas las reglas de negocio y actualiza plazos antes de guardar.
+    """
+    try:
+        # VERIFICACIÓN ADICIONAL DEL GUARDADO CSV
+        if mostrar_mensaje:
+            st.info("🔄 Procesando y validando datos...")
+        
+        # Aplicar validaciones de reglas de negocio
+        registros_df = validar_reglas_negocio(registros_df)
+        
+        # Actualizar todos los plazos automáticamente
+        registros_df = actualizar_plazo_analisis(registros_df)
+        registros_df = actualizar_plazo_cronograma(registros_df)
+        registros_df = actualizar_plazo_oficio_cierre(registros_df)
+        
+        # Recalcular porcentajes y estados
+        registros_df['Porcentaje Avance'] = registros_df.apply(calcular_porcentaje_avance, axis=1)
+        registros_df['Estado Fechas'] = registros_df.apply(verificar_estado_fechas, axis=1)
+        
+        if mostrar_mensaje:
+            st.info("💾 Guardando en archivo CSV...")
+        
+        # Guardar en archivo CSV con verificación adicional
+        exito, mensaje = guardar_datos_editados(registros_df)
+        
+        # VERIFICACIÓN ADICIONAL: Intentar leer el archivo para confirmar que se guardó
+        if exito:
+            try:
+                import os
+                if os.path.exists('registros.csv'):
+                    # Leer archivo para verificar que se guardó correctamente
+                    df_verificacion = pd.read_csv('registros.csv', sep=';', dtype=str)
+                    if len(df_verificacion) == len(registros_df):
+                        if mostrar_mensaje:
+                            st.success(f"✅ {mensaje_exito} | Registros: {len(df_verificacion)}")
+                        return True, registros_df
+                    else:
+                        if mostrar_mensaje:
+                            st.warning(f"⚠️ Posible problema en guardado: registros esperados {len(registros_df)}, guardados {len(df_verificacion)}")
+                        return True, registros_df  # Aún considerarlo exitoso
+                else:
+                    if mostrar_mensaje:
+                        st.warning("⚠️ Archivo CSV no encontrado después del guardado")
+                    return False, registros_df
+            except Exception as e:
+                if mostrar_mensaje:
+                    st.warning(f"⚠️ No se pudo verificar el guardado: {str(e)}")
+                return True, registros_df  # Asumir que funcionó si llegó hasta aquí
+        else:
+            if mostrar_mensaje:
+                st.error(f"❌ Error al guardar: {mensaje}")
+            return False, registros_df
+            
+    except Exception as e:
+        if mostrar_mensaje:
+            st.error(f"❌ Error crítico al guardar datos: {str(e)}")
+        return False, registros_df
+
+
+# Función auxiliar para guardar datos de forma consistente
+def guardar_datos_con_validacion(registros_df, mensaje_exito="Datos guardados correctamente", mostrar_mensaje=True):
+    """
+    Función auxiliar que garantiza el guardado de datos con validaciones completas.
+    Aplica todas las reglas de negocio y actualiza plazos antes de guardar.
+    """
+    try:
+        # Aplicar validaciones de reglas de negocio
+        registros_df = validar_reglas_negocio(registros_df)
+
+        # Asegurar que siempre se guarden los datos con las validaciones aplicadas
+        exito, registros_df = guardar_datos_con_validacion(
+            registros_df, 
+            "Validaciones de reglas de negocio aplicadas", 
+            False
+        )
+        
+        # Actualizar todos los plazos automáticamente
+        registros_df = actualizar_plazo_analisis(registros_df)
+        registros_df = actualizar_plazo_cronograma(registros_df)
+        registros_df = actualizar_plazo_oficio_cierre(registros_df)
+        
+        # Recalcular porcentajes y estados
+        registros_df['Porcentaje Avance'] = registros_df.apply(calcular_porcentaje_avance, axis=1)
+        registros_df['Estado Fechas'] = registros_df.apply(verificar_estado_fechas, axis=1)
+        
+        # Guardar en archivo CSV
+        exito, mensaje = guardar_datos_editados(registros_df)
+        
+        if exito:
+            if mostrar_mensaje:
+                st.success(f"✅ {mensaje_exito}")
+            return True, registros_df
+        else:
+            if mostrar_mensaje:
+                st.error(f"❌ Error al guardar: {mensaje}")
+            return False, registros_df
+            
+    except Exception as e:
+        if mostrar_mensaje:
+            st.error(f"❌ Error crítico al guardar datos: {str(e)}")
+        return False, registros_df
+
+
 # Función para convertir fecha string a datetime
 def string_a_fecha(fecha_str):
     """Convierte un string de fecha a objeto datetime para mostrar en el selector de fecha."""
@@ -43,7 +312,7 @@ def highlight_estado_fechas(s):
         return ['background-color: #ffffff'] * len(s)
 
 
-def mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registros_df):
+def mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registros_df, entidad_seleccionada, funcionario_seleccionado, tipo_dato_seleccionado, nivel_seleccionado):
     """Muestra el dashboard principal con métricas y gráficos."""
     # Mostrar métricas generales
     st.markdown('<div class="subtitle">Métricas Generales</div>', unsafe_allow_html=True)
@@ -101,9 +370,31 @@ def mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registr
 
     with col1:
         st.markdown("### Registros Nuevos")
-        st.dataframe(comparacion_nuevos.style.format({
-            'Porcentaje': '{:.2f}%'
-        }).background_gradient(cmap='RdYlGn', subset=['Porcentaje']))
+        
+        # Crear función de estilo personalizada para el gradiente
+        def aplicar_gradiente_personalizado(df_style):
+            def color_porcentaje(val):
+                if pd.isna(val):
+                    return ''
+                val = float(val)
+                if val >= 100:
+                    return 'background-color: #22c55e; color: white; font-weight: bold'  # Verde para >= 100%
+                elif val >= 80:
+                    return f'background-color: #84cc16; color: white'  # Verde claro 80-99%
+                elif val >= 60:
+                    return f'background-color: #eab308; color: white'  # Amarillo 60-79%
+                elif val >= 40:
+                    return f'background-color: #f97316; color: white'  # Naranja 40-59%
+                elif val >= 20:
+                    return f'background-color: #f87171; color: white'  # Rojo claro 20-39%
+                else:
+                    return f'background-color: #dc2626; color: white; font-weight: bold'  # Rojo intenso 0-19%
+            
+            return df_style.applymap(color_porcentaje, subset=['Porcentaje'])
+        
+        st.dataframe(aplicar_gradiente_personalizado(
+            comparacion_nuevos.style.format({'Porcentaje': '{:.2f}%'})
+        ))
 
         # Gráfico de barras para registros nuevos
         fig_nuevos = px.bar(
@@ -119,9 +410,11 @@ def mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registr
 
     with col2:
         st.markdown("### Registros a Actualizar")
-        st.dataframe(comparacion_actualizar.style.format({
-            'Porcentaje': '{:.2f}%'
-        }).background_gradient(cmap='RdYlGn', subset=['Porcentaje']))
+        
+        # Aplicar el mismo gradiente personalizado
+        st.dataframe(aplicar_gradiente_personalizado(
+            comparacion_actualizar.style.format({'Porcentaje': '{:.2f}%'})
+        ))
 
         # Gráfico de barras para registros a actualizar
         fig_actualizar = px.bar(
@@ -139,12 +432,32 @@ def mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registr
     st.markdown('<div class="subtitle">Diagrama de Gantt - Cronograma de Hitos por Nivel de Información</div>',
                 unsafe_allow_html=True)
 
-    # Crear el diagrama de Gantt
-    fig_gantt = crear_gantt(df_filtrado)
-    if fig_gantt is not None:
-        st.plotly_chart(fig_gantt, use_container_width=True)
+    # GANTT CONDICIONAL - Solo mostrar si hay filtros aplicados
+    filtros_aplicados = (
+        entidad_seleccionada != 'Todas' or 
+        funcionario_seleccionado != 'Todos' or 
+        tipo_dato_seleccionado != 'Todos' or 
+        nivel_seleccionado != 'Todos'
+    )
+    
+    if filtros_aplicados:
+        # Crear el diagrama de Gantt solo si hay filtros
+        fig_gantt = crear_gantt(df_filtrado)
+        if fig_gantt is not None:
+            st.plotly_chart(fig_gantt, use_container_width=True)
+        else:
+            st.warning("No hay datos suficientes para crear el diagrama de Gantt con los filtros seleccionados.")
     else:
-        st.warning("No hay datos suficientes para crear el diagrama de Gantt.")
+        # Mostrar mensaje informativo si no hay filtros
+        st.info("""
+        📊 **Para mostrar el Diagrama de Gantt, seleccione al menos un filtro específico:**
+        - Entidad (diferente a 'Todas')
+        - Funcionario (diferente a 'Todos') 
+        - Tipo de Dato (diferente a 'Todos')
+        - Nivel de Información (diferente a 'Todos')
+        
+        💡 *Esto mejora el rendimiento y la legibilidad del cronograma.*
+        """)
 
     # Tabla de registros con porcentaje de avance
     st.markdown('<div class="subtitle">Detalle de Registros</div>', unsafe_allow_html=True)
@@ -186,11 +499,29 @@ def mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registr
                 df_mostrar[col] = df_mostrar[col].apply(lambda x: formatear_fecha(x) if es_fecha_valida(x) else "")
 
         # Mostrar el dataframe con formato
+        def aplicar_gradiente_avance(df_style):
+            def color_porcentaje_avance(val):
+                if pd.isna(val):
+                    return ''
+                val = float(val)
+                if val >= 100:
+                    return 'background-color: #22c55e; color: white; font-weight: bold'  # Verde para >= 100%
+                elif val >= 80:
+                    return f'background-color: #84cc16; color: white'  # Verde claro 80-99%
+                elif val >= 60:
+                    return f'background-color: #eab308; color: white'  # Amarillo 60-79%
+                elif val >= 40:
+                    return f'background-color: #f97316; color: white'  # Naranja 40-59%
+                elif val >= 20:
+                    return f'background-color: #f87171; color: white'  # Rojo claro 20-39%
+                else:
+                    return f'background-color: #dc2626; color: white; font-weight: bold'  # Rojo intenso 0-19%
+            
+            return df_style.applymap(color_porcentaje_avance, subset=['Porcentaje Avance'])
+        
         st.dataframe(
-            df_mostrar
-            .style.format({'Porcentaje Avance': '{:.2f}%'})
-            .apply(highlight_estado_fechas, axis=1)
-            .background_gradient(cmap='RdYlGn', subset=['Porcentaje Avance']),
+            aplicar_gradiente_avance(df_mostrar.style.format({'Porcentaje Avance': '{:.2f}%'}))
+            .apply(highlight_estado_fechas, axis=1),
             use_container_width=True
         )
 
@@ -302,11 +633,13 @@ def mostrar_edicion_registros(registros_df):
     - Se aplicarán automáticamente las siguientes validaciones:
         1. Si 'Entrega acuerdo de compromiso' no está vacío, 'Acuerdo de compromiso' se actualizará a 'SI'
         2. Si 'Análisis y cronograma' tiene fecha, 'Análisis de información' se actualizará a 'SI'
-        3. Al introducir fecha en 'Estándares', los campos que no estén 'Completo' se actualizarán automáticamente a 'No aplica'
-        4. Si introduce fecha en 'Publicación', 'Disponer datos temáticos' se actualizará automáticamente a 'SI'
-        5. Para introducir una fecha en 'Fecha de oficio de cierre', debe tener la etapa de Publicación completada (con fecha)
-        6. Al introducir una fecha en 'Fecha de oficio de cierre', el campo 'Estado' se actualizará automáticamente a 'Completado'
-        7. Si se elimina la fecha de oficio de cierre, el Estado se cambiará automáticamente a 'En proceso'
+        3. Si introduce fecha en 'Estándares', se verificará que los campos 'Registro (completo)', 'ET (completo)', 'CO (completo)', 'DD (completo)', 'REC (completo)' y 'SERVICIO (completo)' estén 'Completo'
+        4. Si introduce fecha en 'Publicación', se verificará que 'Disponer datos temáticos' sea 'SI'
+        5. Si 'Disponer datos temáticos' se marca como 'No', se eliminará la fecha de 'Publicación' si existe.
+        6. Para introducir una fecha en 'Fecha de oficio de cierre', todos los campos Si/No deben estar marcados como 'Si', todos los estándares deben estar 'Completo' y todas las fechas diligenciadas y anteriores a la fecha de cierre.
+        7. Al introducir una fecha en 'Fecha de oficio de cierre', el campo 'Estado' se actualizará automáticamente a 'Completado'.
+        8. Si se modifica algún campo de forma que ya no cumpla con las reglas para 'Fecha de oficio de cierre', esta fecha se borrará automáticamente.
+        9. Solo los registros con 'Fecha de oficio de cierre' válida pueden tener estado 'Completado'.
     """)
     # Mostrar mensaje de guardado si existe
     if st.session_state.mensaje_guardado:
@@ -346,6 +679,9 @@ def mostrar_edicion_registros(registros_df):
         # Flag para detectar cambios
         edited = False
 
+        # Flag para detectar si se ha introducido fecha en estándares sin validadores completos
+        estandares_warning = False
+
         # Contenedor para los datos de edición
         with st.container():
             st.markdown("---")
@@ -374,6 +710,10 @@ def mostrar_edicion_registros(registros_df):
                 if nuevo_tipo != row['TipoDato']:
                     registros_df.at[registros_df.index[indice_seleccionado], 'TipoDato'] = nuevo_tipo
                     edited = True
+                    # Guardar cambio inmediatamente
+                    exito, registros_df = guardar_datos_con_validacion(registros_df, "Tipo de dato actualizado", False)
+                    if exito:
+                        st.session_state.cambios_pendientes = False
 
             with col3:
                 # Nivel de Información
@@ -662,35 +1002,24 @@ def mostrar_edicion_registros(registros_df):
                         indice_seleccionado], 'Fecha de entrega de información'] = nueva_fecha_entrega_info_str
                     edited = True
 
-                    # Actualizar automáticamente todos los plazos
-                    registros_df = actualizar_plazo_analisis(registros_df)
-                    registros_df = actualizar_plazo_cronograma(registros_df)
-                    registros_df = actualizar_plazo_oficio_cierre(registros_df)
-
-                    # Guardar los datos actualizados inmediatamente para asegurarnos de que los cambios persistan
-                    exito, mensaje = guardar_datos_editados(registros_df)
-                    if not exito:
-                        st.warning(f"No se pudieron guardar los plazos actualizados: {mensaje}")
-
-                    # Mostrar los nuevos plazos calculados
-                    nuevo_plazo_analisis = registros_df.iloc[indice_seleccionado][
-                        'Plazo de análisis'] if 'Plazo de análisis' in registros_df.iloc[
-                        indice_seleccionado] else ""
-                    nuevo_plazo_cronograma = registros_df.iloc[indice_seleccionado][
-                        'Plazo de cronograma'] if 'Plazo de cronograma' in registros_df.iloc[
-                        indice_seleccionado] else ""
-                    st.info(f"El plazo de análisis se ha actualizado automáticamente a: {nuevo_plazo_analisis}")
-                    st.info(f"El plazo de cronograma se ha actualizado automáticamente a: {nuevo_plazo_cronograma}")
-
-                    # Guardar cambios inmediatamente
-                    exito, mensaje = guardar_datos_editados(registros_df)
+                    # Guardar cambios inmediatamente con recálculo de plazos
+                    exito, registros_df = guardar_datos_con_validacion(
+                        registros_df, 
+                        "Fecha de entrega actualizada y plazos recalculados correctamente", 
+                        True
+                    )
+                    
                     if exito:
-                        st.success("Fecha de entrega actualizada y plazos recalculados correctamente.")
                         st.session_state.cambios_pendientes = False
-                        # Actualizar la tabla completa
+                        # Mostrar los nuevos plazos calculados
+                        nuevo_plazo_analisis = registros_df.iloc[indice_seleccionado].get('Plazo de análisis', "")
+                        nuevo_plazo_cronograma = registros_df.iloc[indice_seleccionado].get('Plazo de cronograma', "")
+                        st.info(f"📅 Plazo de análisis: {nuevo_plazo_analisis}")
+                        st.info(f"📅 Plazo de cronograma: {nuevo_plazo_cronograma}")
+                        # Recargar la vista para mostrar cambios
                         st.rerun()
                     else:
-                        st.error(f"Error al guardar cambios: {mensaje}")
+                        st.error("Error al guardar cambios")
 
             with col2:
                 # Plazo de análisis (solo mostrar, no editar)
@@ -769,37 +1098,48 @@ def mostrar_edicion_registros(registros_df):
                 # En la sección de "Fecha de estándares (real)"
                 # Verificar si se ha introducido una fecha nueva en estándares
                 if nueva_fecha_estandares_str and nueva_fecha_estandares_str != fecha_original:
-                    # Actualizar la fecha sin restricciones
-                    registros_df.at[
-                        registros_df.index[indice_seleccionado], 'Estándares'] = nueva_fecha_estandares_str
-                    
-                    # Actualizar campos de estándares que no estén "Completo" a "No aplica"
+                    # Verificar si todos los campos de estándares están completos
                     campos_estandares = ['Registro (completo)', 'ET (completo)', 'CO (completo)', 'DD (completo)',
                                          'REC (completo)', 'SERVICIO (completo)']
-                    
-                    campos_actualizados = []
-                    for campo in campos_estandares:
-                        if campo in registros_df.columns:
-                            valor_actual = str(registros_df.iloc[indice_seleccionado][campo]).strip()
-                            if valor_actual.upper() != "COMPLETO":
-                                registros_df.at[registros_df.index[indice_seleccionado], campo] = "No aplica"
-                                nombre_campo = campo.split(' (')[0]
-                                campos_actualizados.append(nombre_campo)
-                    
-                    if campos_actualizados:
-                        st.info(f"Los siguientes estándares se actualizaron a 'No aplica': {', '.join(campos_actualizados)}")
-                    
-                    edited = True
+                    todos_completos = True
+                    campos_incompletos = []
 
-                    # Guardar cambios inmediatamente
-                    registros_df = validar_reglas_negocio(registros_df)
-                    exito, mensaje = guardar_datos_editados(registros_df)
-                    if exito:
-                        st.success("Fecha de estándares actualizada y guardada correctamente.")
-                        st.session_state.cambios_pendientes = False
-                        st.rerun()  # Recargar la página para mostrar los cambios
+                    for campo in campos_estandares:
+                        if campo in registros_df.columns and campo in registros_df.iloc[indice_seleccionado]:
+                            valor = str(registros_df.iloc[indice_seleccionado][campo]).strip()
+                            if valor.upper() != "COMPLETO":
+                                todos_completos = False
+                                campos_incompletos.append(campo)
+
+                    # Si no todos están completos, mostrar advertencia y no permitir el cambio
+                    if not todos_completos:
+                        st.error(
+                            f"No es posible diligenciar este campo. Verifique que todos los estándares se encuentren en estado Completo. Campos pendientes: {', '.join(campos_incompletos)}")
+                        # Mantener el valor original
+                        registros_df.at[registros_df.index[indice_seleccionado], 'Estándares'] = fecha_original
                     else:
-                        st.error(f"Error al guardar cambios: {mensaje}")
+                        # Solo actualizar si todos los campos están completos
+                        registros_df.at[
+                            registros_df.index[indice_seleccionado], 'Estándares'] = nueva_fecha_estandares_str
+                        edited = True
+
+                        # Guardar cambios inmediatamente sin más validaciones
+                        exito, mensaje = guardar_datos_editados(registros_df)
+                        if exito:
+                            st.success("Fecha de estándares actualizada y guardada correctamente.")
+                            st.session_state.cambios_pendientes = False
+                            st.rerun()  # Recargar la página para mostrar los cambios
+                        else:
+                            st.error(f"Error al guardar cambios: {mensaje}")
+
+                        # Guardar cambios inmediatamente
+                        registros_df = validar_reglas_negocio(registros_df)
+                        exito, mensaje = guardar_datos_editados(registros_df)
+                        if exito:
+                            st.success("Fecha de estándares actualizada y guardada correctamente.")
+                            st.session_state.cambios_pendientes = False
+                        else:
+                            st.error(f"Error al guardar cambios: {mensaje}")
 
                 elif nueva_fecha_estandares_str != fecha_original:
                     # Si se está borrando la fecha, permitir el cambio
@@ -814,6 +1154,11 @@ def mostrar_edicion_registros(registros_df):
                         st.session_state.cambios_pendientes = False
                     else:
                         st.error(f"Error al guardar cambios: {mensaje}")
+
+            # Mostrar advertencia si corresponde
+            if estandares_warning:
+                st.error(
+                    "No se puede diligenciar este campo. Verifique que los estándares se encuentren en estado Completo")
 
             # Sección: Cumplimiento de estándares
             st.markdown("#### Cumplimiento de estándares")
@@ -836,7 +1181,7 @@ def mostrar_edicion_registros(registros_df):
 
                 with cols[i % 3]:
                     # Determinar el índice correcto para el valor actual
-                    opciones = ["Sin iniciar", "En proceso", "Completo", "No aplica"]
+                    opciones = ["Sin iniciar", "En proceso", "Completo"]
                     indice_opcion = 0  # Por defecto "Sin iniciar"
 
                     if valor_actual in opciones:
@@ -845,8 +1190,6 @@ def mostrar_edicion_registros(registros_df):
                         indice_opcion = 1
                     elif str(valor_actual).lower() == "completo":
                         indice_opcion = 2
-                    elif str(valor_actual).lower() == "no aplica":
-                        indice_opcion = 3
 
                     # Extraer nombre sin el sufijo para mostrar en la interfaz
                     nombre_campo = campo.split(' (')[0]
@@ -866,22 +1209,24 @@ def mostrar_edicion_registros(registros_df):
                         edited = True
 
                         # Guardar cambios inmediatamente al modificar estándares
-                        registros_df = validar_reglas_negocio(registros_df)
-                        exito, mensaje = guardar_datos_editados(registros_df)
+                        exito, registros_df = guardar_datos_con_validacion(
+                            registros_df, 
+                            f"Campo '{nombre_campo}' actualizado a '{nuevo_valor}'", 
+                            True
+                        )
+                        
                         if exito:
-                            st.success(
-                                f"Campo '{nombre_campo}' actualizado a '{nuevo_valor}' y guardado correctamente.")
                             st.session_state.cambios_pendientes = False
                             # Actualizar la tabla completa
                             st.rerun()
                         else:
-                            st.error(f"Error al guardar cambios: {mensaje}")
+                            st.error("Error al guardar cambios")
 
             # Explicación sobre los campos de estándares
             st.info("""
-            **Nota sobre los estándares**: Al ingresar una fecha en el campo 'Estándares', 
-            los campos que no estén marcados como 'Completo' se actualizarán automáticamente a 'No aplica'. 
-            Esto permite flexibilidad cuando algunos estándares no son aplicables al registro específico.
+            **Nota sobre los estándares**: Para poder ingresar una fecha en el campo 'Estándares', 
+            todos los campos anteriores deben estar en estado 'Completo'. Esto es un requisito 
+            obligatorio según las reglas de validación del sistema.
             """)
 
             # Validaciones (campos adicionales relacionados con validación)
@@ -934,6 +1279,13 @@ def mostrar_edicion_registros(registros_df):
                     if disponer_datos != row['Disponer datos temáticos']:
                         registros_df.at[
                             registros_df.index[indice_seleccionado], 'Disponer datos temáticos'] = disponer_datos
+
+                        # Si se cambia a "No", limpiar la fecha de publicación
+                        if disponer_datos.upper() == "NO" and 'Publicación' in registros_df.columns:
+                            registros_df.at[registros_df.index[indice_seleccionado], 'Publicación'] = ""
+                            st.warning(
+                                "Se ha eliminado la fecha de publicación porque 'Disponer datos temáticos' se marcó como 'No'.")
+
                         edited = True
 
                         # Guardar cambios inmediatamente para validar reglas de negocio
@@ -987,37 +1339,45 @@ def mostrar_edicion_registros(registros_df):
                 fecha_original = "" if pd.isna(row['Publicación']) else row['Publicación']
 
                 if nueva_fecha_publicacion_str and nueva_fecha_publicacion_str != fecha_original:
-                    # Actualizar automáticamente "Disponer datos temáticos" a "Si"
-                    if 'Disponer datos temáticos' in registros_df.columns:
-                        registros_df.at[registros_df.index[indice_seleccionado], 'Disponer datos temáticos'] = 'Si'
-                        st.info("Se ha actualizado automáticamente 'Disponer datos temáticos' a 'Si'")
-                    
-                    # Actualizar la fecha de publicación
-                    registros_df.at[
-                        registros_df.index[indice_seleccionado], 'Publicación'] = nueva_fecha_publicacion_str
-                    edited = True
+                    # Verificar si Disponer datos temáticos está marcado como Si
+                    disponer_datos_tematicos = False
+                    if 'Disponer datos temáticos' in registros_df.iloc[indice_seleccionado]:
+                        valor = registros_df.iloc[indice_seleccionado]['Disponer datos temáticos']
+                        disponer_datos_tematicos = valor.upper() in ["SI", "SÍ", "YES", "Y"] if pd.notna(
+                            valor) else False
 
-                    # Recalcular el plazo de oficio de cierre inmediatamente
-                    registros_df = actualizar_plazo_oficio_cierre(registros_df)
-
-                    # Obtener el nuevo plazo calculado
-                    nuevo_plazo_oficio = registros_df.iloc[indice_seleccionado][
-                        'Plazo de oficio de cierre'] if 'Plazo de oficio de cierre' in registros_df.iloc[
-                        indice_seleccionado] else ""
-                    st.info(
-                        f"El plazo de oficio de cierre se ha actualizado automáticamente a: {nuevo_plazo_oficio}")
-
-                    # Guardar cambios inmediatamente
-                    registros_df = validar_reglas_negocio(registros_df)
-                    exito, mensaje = guardar_datos_editados(registros_df)
-                    if exito:
-                        st.success(
-                            "Fecha de publicación actualizada y plazo de oficio de cierre recalculado correctamente.")
-                        st.session_state.cambios_pendientes = False
-                        # Actualizar la tabla completa
-                        st.rerun()
+                    # Si no está marcado como Si, mostrar advertencia y no permitir el cambio
+                    if not disponer_datos_tematicos:
+                        st.error(
+                            "No es posible diligenciar este campo. El campo 'Disponer datos temáticos' debe estar marcado como 'Si'")
+                        # No actualizar el valor en el DataFrame
                     else:
-                        st.error(f"Error al guardar cambios: {mensaje}")
+                        # Solo actualizar si cumple la condición
+                        registros_df.at[
+                            registros_df.index[indice_seleccionado], 'Publicación'] = nueva_fecha_publicacion_str
+                        edited = True
+
+                        # Recalcular el plazo de oficio de cierre inmediatamente
+                        registros_df = actualizar_plazo_oficio_cierre(registros_df)
+
+                        # Obtener el nuevo plazo calculado
+                        nuevo_plazo_oficio = registros_df.iloc[indice_seleccionado][
+                            'Plazo de oficio de cierre'] if 'Plazo de oficio de cierre' in registros_df.iloc[
+                            indice_seleccionado] else ""
+                        st.info(
+                            f"El plazo de oficio de cierre se ha actualizado automáticamente a: {nuevo_plazo_oficio}")
+
+                        # Guardar cambios inmediatamente
+                        registros_df = validar_reglas_negocio(registros_df)
+                        exito, mensaje = guardar_datos_editados(registros_df)
+                        if exito:
+                            st.success(
+                                "Fecha de publicación actualizada y plazo de oficio de cierre recalculado correctamente.")
+                            st.session_state.cambios_pendientes = False
+                            # Actualizar la tabla completa
+                            st.rerun()
+                        else:
+                            st.error(f"Error al guardar cambios: {mensaje}")
 
                 elif nueva_fecha_publicacion_str != fecha_original:
                     # Si se está borrando la fecha, permitir el cambio
@@ -1136,37 +1496,34 @@ def mostrar_edicion_registros(registros_df):
 
                         # Si se ha introducido una nueva fecha de oficio de cierre
                         if nueva_fecha_oficio_str and nueva_fecha_oficio_str != fecha_original:
-                            # Solo validar que la publicación esté completada
-                            tiene_publicacion = (
-                                'Publicación' in row and 
-                                pd.notna(row['Publicación']) and 
-                                row['Publicación'] != ""
-                            )
+                            # Validar los requisitos para oficio de cierre
+                            valido, campos_incompletos = verificar_condiciones_oficio_cierre(row)
 
-                            if not tiene_publicacion:
+                            # Si hay campos incompletos, mostrar advertencia y no permitir el cambio
+                            if not valido:
                                 st.error(
-                                    "No es posible diligenciar la Fecha de oficio de cierre. Debe completar primero la etapa de Publicación.")
+                                    "No es posible diligenciar la Fecha de oficio de cierre. Debe tener todos los campos Si/No en 'Si', todos los estándares completos, y todas las fechas diligenciadas y anteriores a la fecha de cierre.")
+                                # Mostrar los campos incompletos
+                                st.error(f"Campos incompletos: {', '.join(campos_incompletos)}")
+                                # NO actualizar el valor en el DataFrame para evitar validaciones recursivas
                             else:
-                                # Actualizar fecha de oficio de cierre
+                                # Solo actualizar si se cumplen todas las condiciones
                                 registros_df.at[registros_df.index[
                                     indice_seleccionado], 'Fecha de oficio de cierre'] = nueva_fecha_oficio_str
 
-                                # Actualizar Estado a "Completado" automáticamente
+                                # Actualizar Estado a "Completado"
                                 registros_df.at[registros_df.index[indice_seleccionado], 'Estado'] = 'Completado'
 
-                                # Recalcular el porcentaje de avance (ahora será 100% automáticamente)
-                                registros_df.at[registros_df.index[indice_seleccionado], 'Porcentaje Avance'] = calcular_porcentaje_avance(registros_df.iloc[indice_seleccionado])
-
                                 edited = True
-                                # Guardar cambios
+                                # Guardar cambios sin recargar la página inmediatamente
                                 registros_df = validar_reglas_negocio(registros_df)
                                 exito, mensaje = guardar_datos_editados(registros_df)
                                 if exito:
                                     st.success(
-                                        "Fecha de oficio de cierre actualizada. Estado cambiado a 'Completado' y avance al 100%.")
+                                        "Fecha de oficio de cierre actualizada y Estado cambiado a 'Completado'.")
                                     st.session_state.cambios_pendientes = False
-                                    st.button("Actualizar vista", key=f"actualizar_oficio_{indice_seleccionado}",
-                                              on_click=lambda: st.rerun())
+                                    # ELIMINADO: Botón que causaba bloqueo
+                                    st.info("🔄 Recargue manualmente la página para ver todos los cambios")
                                 else:
                                     st.error(f"Error al guardar cambios: {mensaje}")
 
@@ -1183,14 +1540,14 @@ def mostrar_edicion_registros(registros_df):
                                     "El estado ha sido cambiado a 'En proceso' porque se eliminó la fecha de oficio de cierre.")
 
                             edited = True
-                            # Guardar cambios
+                            # Guardar cambios sin recargar la página inmediatamente
                             registros_df = validar_reglas_negocio(registros_df)
                             exito, mensaje = guardar_datos_editados(registros_df)
                             if exito:
                                 st.success("Fecha de oficio de cierre actualizada correctamente.")
                                 st.session_state.cambios_pendientes = False
-                                st.button("Actualizar vista", key=f"actualizar_oficio_borrar_{indice_seleccionado}",
-                                          on_click=lambda: st.rerun())
+                                # ELIMINADO: Botón que causaba bloqueo
+                                st.info("🔄 Recargue manualmente la página para ver todos los cambios")
                             else:
                                 st.error(f"Error al guardar cambios: {mensaje}")
 
@@ -1246,9 +1603,8 @@ def mostrar_edicion_registros(registros_df):
                         if exito:
                             st.success("Estado actualizado correctamente.")
                             st.session_state.cambios_pendientes = False
-                            # Mostrar botón para actualizar manualmente en lugar de recargar automáticamente
-                            st.button("Actualizar vista", key=f"actualizar_estado_{indice_seleccionado}",
-                                      on_click=lambda: st.rerun())
+                            # ELIMINADO: Botón que causaba bloqueo
+                            st.info("🔄 Recargue manualmente la página para ver todos los cambios")
                         else:
                             st.error(f"Error al guardar cambios: {mensaje}")
             # Observaciones
@@ -1288,9 +1644,7 @@ def mostrar_edicion_registros(registros_df):
                     else:
                         st.session_state.mensaje_guardado = ("error", mensaje)
 
-            # Agregar botón para actualizar la tabla completa sin guardar cambios
-            if st.button("Actualizar Vista", key=f"actualizar_{indice_seleccionado}"):
-                st.rerun()
+            # ELIMINADO: Botón "Actualizar Vista" que causaba bloqueos
 
     except Exception as e:
         st.error(f"Error al editar el registro: {e}")
@@ -1393,9 +1747,29 @@ def mostrar_detalle_cronogramas(df_filtrado):
     avance_hitos_df.columns = ['Hito', 'Completados', 'Total', 'Porcentaje']
 
     # Mostrar tabla de avance por hito
-    st.dataframe(avance_hitos_df.style.format({
-        'Porcentaje': '{:.2f}%'
-    }).background_gradient(cmap='RdYlGn', subset=['Porcentaje']))
+    def aplicar_gradiente_hitos(df_style):
+        def color_porcentaje_hito(val):
+            if pd.isna(val):
+                return ''
+            val = float(val)
+            if val >= 100:
+                return 'background-color: #22c55e; color: white; font-weight: bold'  # Verde para >= 100%
+            elif val >= 80:
+                return f'background-color: #84cc16; color: white'  # Verde claro 80-99%
+            elif val >= 60:
+                return f'background-color: #eab308; color: white'  # Amarillo 60-79%
+            elif val >= 40:
+                return f'background-color: #f97316; color: white'  # Naranja 40-59%
+            elif val >= 20:
+                return f'background-color: #f87171; color: white'  # Rojo claro 20-39%
+            else:
+                return f'background-color: #dc2626; color: white; font-weight: bold'  # Rojo intenso 0-19%
+        
+        return df_style.applymap(color_porcentaje_hito, subset=['Porcentaje'])
+    
+    st.dataframe(aplicar_gradiente_hitos(
+        avance_hitos_df.style.format({'Porcentaje': '{:.2f}%'})
+    ))
 
     # Crear gráfico de barras para el avance por hito
     fig_hitos = px.bar(
@@ -1498,9 +1872,29 @@ def mostrar_diagnostico(registros_df, meta_df, metas_nuevas_df, metas_actualizar
         df_faltantes = df_faltantes[df_faltantes['Valores Faltantes'] > 0]
 
         if not df_faltantes.empty:
-            st.dataframe(df_faltantes.style.format({
-                'Porcentaje': '{:.2f}%'
-            }).background_gradient(cmap='Blues', subset=['Porcentaje']))
+            def aplicar_gradiente_faltantes(df_style):
+                def color_porcentaje_faltante(val):
+                    if pd.isna(val):
+                        return ''
+                    val = float(val)
+                    if val >= 80:
+                        return 'background-color: #dc2626; color: white; font-weight: bold'  # Rojo intenso para muchos faltantes
+                    elif val >= 60:
+                        return f'background-color: #f87171; color: white'  # Rojo claro
+                    elif val >= 40:
+                        return f'background-color: #f97316; color: white'  # Naranja
+                    elif val >= 20:
+                        return f'background-color: #eab308; color: white'  # Amarillo
+                    elif val > 0:
+                        return f'background-color: #84cc16; color: white'  # Verde claro
+                    else:
+                        return f'background-color: #22c55e; color: white; font-weight: bold'  # Verde para 0% faltantes
+                
+                return df_style.applymap(color_porcentaje_faltante, subset=['Porcentaje'])
+            
+            st.dataframe(aplicar_gradiente_faltantes(
+                df_faltantes.style.format({'Porcentaje': '{:.2f}%'})
+            ))
 
             # Crear gráfico de barras para valores faltantes
             fig_faltantes = px.bar(
@@ -2040,7 +2434,7 @@ def mostrar_alertas_vencimientos(registros_df):
         # Filtros para la tabla de alertas
         st.markdown("### Filtrar Alertas")
 
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns(3)
 
         with col1:
             tipo_alerta_filtro = st.multiselect(
@@ -2070,15 +2464,6 @@ def mostrar_alertas_vencimientos(registros_df):
             else:
                 funcionario_filtro = ["Todos"]
 
-        with col4:
-            # CAMBIO 3: Agregar filtro de Tipo de Dato en la sección "Filtrar Alertas"
-            tipos_dato_alertas = ['Todos'] + sorted(registros_df['TipoDato'].dropna().unique().tolist())
-            tipo_dato_filtro_alertas = st.multiselect(
-                "Tipo de Dato",
-                options=tipos_dato_alertas,
-                default=["Todos"]
-            )
-
         # Aplicar filtros
         df_alertas_filtrado = df_alertas.copy()
 
@@ -2090,12 +2475,6 @@ def mostrar_alertas_vencimientos(registros_df):
 
         if 'Funcionario' in df_alertas.columns and funcionario_filtro and "Todos" not in funcionario_filtro:
             df_alertas_filtrado = df_alertas_filtrado[df_alertas_filtrado['Funcionario'].isin(funcionario_filtro)]
-
-        # CAMBIO 3: Aplicar filtro de tipo de dato
-        if tipo_dato_filtro_alertas and "Todos" not in tipo_dato_filtro_alertas:
-            # Necesitamos obtener los códigos de los registros que coinciden con el tipo de dato
-            codigos_tipo_dato = registros_df[registros_df['TipoDato'].isin(tipo_dato_filtro_alertas)]['Cod'].tolist()
-            df_alertas_filtrado = df_alertas_filtrado[df_alertas_filtrado['Cod'].isin(codigos_tipo_dato)]
 
         # Mostrar tabla de alertas con formato
         st.markdown("### Listado de Alertas")
@@ -2153,254 +2532,6 @@ def mostrar_alertas_vencimientos(registros_df):
         st.success("¡No hay alertas de vencimientos pendientes!")
 
 
-# Función para mostrar la pestaña de reportes
-def mostrar_reportes(registros_df, tipo_dato_filtro, acuerdo_filtro, analisis_filtro, 
-                    estandares_filtro, publicacion_filtro, finalizado_filtro):
-    """Muestra la pestaña de reportes con tabla completa y filtros específicos."""
-    st.markdown('<div class="subtitle">Reportes de Registros</div>', unsafe_allow_html=True)
-    
-    # Aplicar filtros
-    df_filtrado = registros_df.copy()
-    
-    # Filtro por tipo de dato
-    if tipo_dato_filtro != 'Todos':
-        df_filtrado = df_filtrado[df_filtrado['TipoDato'].str.upper() == tipo_dato_filtro.upper()]
-    
-    # Filtro por acuerdo de compromiso suscrito
-    if acuerdo_filtro != 'Todos':
-        if acuerdo_filtro == 'Suscrito':
-            # Tiene fecha de suscripción
-            df_filtrado = df_filtrado[
-                (df_filtrado['Suscripción acuerdo de compromiso'].notna()) & 
-                (df_filtrado['Suscripción acuerdo de compromiso'] != '') |
-                (df_filtrado['Entrega acuerdo de compromiso'].notna()) & 
-                (df_filtrado['Entrega acuerdo de compromiso'] != '')
-            ]
-        else:  # No Suscrito
-            df_filtrado = df_filtrado[
-                ((df_filtrado['Suscripción acuerdo de compromiso'].isna()) | 
-                 (df_filtrado['Suscripción acuerdo de compromiso'] == '')) &
-                ((df_filtrado['Entrega acuerdo de compromiso'].isna()) | 
-                 (df_filtrado['Entrega acuerdo de compromiso'] == ''))
-            ]
-    
-    # Filtro por análisis y cronograma
-    if analisis_filtro != 'Todos':
-        if analisis_filtro == 'Completado':
-            df_filtrado = df_filtrado[
-                (df_filtrado['Análisis y cronograma'].notna()) & 
-                (df_filtrado['Análisis y cronograma'] != '')
-            ]
-        else:  # No Completado
-            df_filtrado = df_filtrado[
-                (df_filtrado['Análisis y cronograma'].isna()) | 
-                (df_filtrado['Análisis y cronograma'] == '')
-            ]
-    
-    # Filtro por estándares completado
-    if estandares_filtro != 'Todos':
-        if estandares_filtro == 'Completado':
-            df_filtrado = df_filtrado[
-                (df_filtrado['Estándares'].notna()) & 
-                (df_filtrado['Estándares'] != '')
-            ]
-        else:  # No Completado
-            df_filtrado = df_filtrado[
-                (df_filtrado['Estándares'].isna()) | 
-                (df_filtrado['Estándares'] == '')
-            ]
-    
-    # Filtro por publicación
-    if publicacion_filtro != 'Todos':
-        if publicacion_filtro == 'Completado':
-            df_filtrado = df_filtrado[
-                (df_filtrado['Publicación'].notna()) & 
-                (df_filtrado['Publicación'] != '')
-            ]
-        else:  # No Completado
-            df_filtrado = df_filtrado[
-                (df_filtrado['Publicación'].isna()) | 
-                (df_filtrado['Publicación'] == '')
-            ]
-    
-    # Filtro por finalizado
-    if finalizado_filtro != 'Todos':
-        if finalizado_filtro == 'Finalizado':
-            df_filtrado = df_filtrado[
-                (df_filtrado['Fecha de oficio de cierre'].notna()) & 
-                (df_filtrado['Fecha de oficio de cierre'] != '')
-            ]
-        else:  # No Finalizado
-            df_filtrado = df_filtrado[
-                (df_filtrado['Fecha de oficio de cierre'].isna()) | 
-                (df_filtrado['Fecha de oficio de cierre'] == '')
-            ]
-    
-    # Mostrar estadísticas del filtrado
-    st.markdown("### Resumen de Registros Filtrados")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        total_filtrados = len(df_filtrado)
-        st.markdown(f"""
-        <div class="metric-card">
-            <p style="font-size: 1rem; color: #64748b;">Total Filtrados</p>
-            <p style="font-size: 2.5rem; font-weight: bold; color: #1E40AF;">{total_filtrados}</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        if total_filtrados > 0:
-            avance_promedio = df_filtrado['Porcentaje Avance'].mean()
-            st.markdown(f"""
-            <div class="metric-card">
-                <p style="font-size: 1rem; color: #64748b;">Avance Promedio</p>
-                <p style="font-size: 2.5rem; font-weight: bold; color: #047857;">{avance_promedio:.1f}%</p>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div class="metric-card">
-                <p style="font-size: 1rem; color: #64748b;">Avance Promedio</p>
-                <p style="font-size: 2.5rem; font-weight: bold; color: #047857;">0%</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-    with col3:
-        if total_filtrados > 0:
-            completados = len(df_filtrado[df_filtrado['Porcentaje Avance'] == 100])
-            st.markdown(f"""
-            <div class="metric-card">
-                <p style="font-size: 1rem; color: #64748b;">Completados</p>
-                <p style="font-size: 2.5rem; font-weight: bold; color: #B45309;">{completados}</p>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div class="metric-card">
-                <p style="font-size: 1rem; color: #64748b;">Completados</p>
-                <p style="font-size: 2.5rem; font-weight: bold; color: #B45309;">0</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-    with col4:
-        if total_filtrados > 0:
-            porcentaje_completados = (len(df_filtrado[df_filtrado['Porcentaje Avance'] == 100]) / total_filtrados * 100)
-            st.markdown(f"""
-            <div class="metric-card">
-                <p style="font-size: 1rem; color: #64748b;">% Completados</p>
-                <p style="font-size: 2.5rem; font-weight: bold; color: #BE185D;">{porcentaje_completados:.1f}%</p>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div class="metric-card">
-                <p style="font-size: 1rem; color: #64748b;">% Completados</p>
-                <p style="font-size: 2.5rem; font-weight: bold; color: #BE185D;">0%</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-    # Mostrar tabla de registros filtrados
-    st.markdown("### Tabla de Registros")
-    
-    if df_filtrado.empty:
-        st.warning("No se encontraron registros que coincidan con los filtros seleccionados.")
-        return
-    
-    # Definir columnas a mostrar (misma estructura que el dashboard)
-    columnas_mostrar = [
-        'Cod', 'Entidad', 'Nivel Información ', 'Funcionario',
-        'Frecuencia actualizacion ', 'TipoDato',
-        'Suscripción acuerdo de compromiso', 'Entrega acuerdo de compromiso',
-        'Fecha de entrega de información', 'Plazo de análisis', 'Plazo de cronograma',
-        'Análisis y cronograma',
-        'Registro (completo)', 'ET (completo)', 'CO (completo)', 'DD (completo)', 'REC (completo)',
-        'SERVICIO (completo)',
-        'Estándares (fecha programada)', 'Estándares',
-        'Fecha de publicación programada', 'Publicación',
-        'Plazo de oficio de cierre', 'Fecha de oficio de cierre',
-        'Estado', 'Observación', 'Porcentaje Avance'
-    ]
-    
-    # Verificar que todas las columnas existan
-    columnas_mostrar_existentes = [col for col in columnas_mostrar if col in df_filtrado.columns]
-    df_mostrar = df_filtrado[columnas_mostrar_existentes].copy()
-    
-    # Aplicar formato a las fechas
-    columnas_fecha = [
-        'Suscripción acuerdo de compromiso', 'Entrega acuerdo de compromiso',
-        'Fecha de entrega de información', 'Plazo de análisis', 'Plazo de cronograma',
-        'Análisis y cronograma', 'Estándares (fecha programada)', 'Estándares',
-        'Fecha de publicación programada', 'Publicación',
-        'Plazo de oficio de cierre', 'Fecha de oficio de cierre'
-    ]
-    
-    for col in columnas_fecha:
-        if col in df_mostrar.columns:
-            df_mostrar[col] = df_mostrar[col].apply(lambda x: formatear_fecha(x) if es_fecha_valida(x) else "")
-    
-    # Mostrar dataframe con formato
-    st.dataframe(
-        df_mostrar
-        .style.format({'Porcentaje Avance': '{:.2f}%'})
-        .apply(highlight_estado_fechas, axis=1)
-        .background_gradient(cmap='RdYlGn', subset=['Porcentaje Avance']),
-        use_container_width=True
-    )
-    
-    # Botón para descargar reporte
-    st.markdown("### Descargar Reporte")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Descargar como Excel
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_mostrar.to_excel(writer, sheet_name='Reporte Filtrado', index=False)
-
-        excel_data = output.getvalue()
-        st.download_button(
-            label="📊 Descargar reporte como Excel",
-            data=excel_data,
-            file_name=f"reporte_registros_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            help="Descarga el reporte filtrado en formato Excel"
-        )
-    
-    with col2:
-        # Descargar como CSV
-        csv = df_mostrar.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📄 Descargar reporte como CSV",
-            data=csv,
-            file_name=f"reporte_registros_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-            help="Descarga el reporte filtrado en formato CSV"
-        )
-    
-    # Información adicional sobre los filtros aplicados
-    filtros_aplicados = []
-    if tipo_dato_filtro != 'Todos':
-        filtros_aplicados.append(f"Tipo de Dato: {tipo_dato_filtro}")
-    if acuerdo_filtro != 'Todos':
-        filtros_aplicados.append(f"Acuerdo de Compromiso: {acuerdo_filtro}")
-    if analisis_filtro != 'Todos':
-        filtros_aplicados.append(f"Análisis y Cronograma: {analisis_filtro}")
-    if estandares_filtro != 'Todos':
-        filtros_aplicados.append(f"Estándares: {estandares_filtro}")
-    if publicacion_filtro != 'Todos':
-        filtros_aplicados.append(f"Publicación: {publicacion_filtro}")
-    if finalizado_filtro != 'Todos':
-        filtros_aplicados.append(f"Finalizado: {finalizado_filtro}")
-    
-    if filtros_aplicados:
-        st.info(f"**Filtros aplicados:** {', '.join(filtros_aplicados)}")
-    else:
-        st.info("**Mostrando todos los registros** (sin filtros aplicados)")
-
-
 # Función para mostrar mensajes de error
 def mostrar_error(error):
     """Muestra mensajes de error formateados."""
@@ -2447,6 +2578,67 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
+        # AGREGAR GESTIÓN DE DATOS EXCEL
+        st.sidebar.markdown("---")
+        st.sidebar.markdown('<div class="subtitle">📊 Gestión de Datos</div>', unsafe_allow_html=True)
+        
+        # Verificar autenticación admin
+        if 'admin_authenticated' not in st.session_state:
+            st.session_state.admin_authenticated = False
+        
+        if not st.session_state.admin_authenticated:
+            # Mostrar login
+            st.sidebar.markdown("**🔐 Acceso Administrador**")
+            password = st.sidebar.text_input("Contraseña:", type="password", key="admin_pass")
+            if st.sidebar.button("🔓 Acceder"):
+                if password == "qwerty":
+                    st.session_state.admin_authenticated = True
+                    st.rerun()
+                else:
+                    st.sidebar.error("❌ Contraseña incorrecta")
+        else:
+            # Mostrar funcionalidad Excel
+            st.sidebar.success("🔓 Admin autenticado")
+            
+            # Descargar template
+            st.sidebar.markdown("**📥 Descargar Template**")
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                registros_df.to_excel(writer, sheet_name='Registros', index=False)
+            
+            st.sidebar.download_button(
+                label="📊 Descargar Template Excel",
+                data=output.getvalue(),
+                file_name=f"template_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            
+            # Cargar datos
+            st.sidebar.markdown("**📤 Cargar Datos**")
+            uploaded_file = st.sidebar.file_uploader("Excel editado", type=['xlsx', 'xls'])
+            
+            if uploaded_file:
+                try:
+                    df_cargado = pd.read_excel(uploaded_file, sheet_name='Registros')
+                    st.sidebar.success(f"✅ {len(df_cargado)} registros")
+                    
+                    if st.sidebar.button("🔄 Actualizar", type="primary"):
+                        # Validar y guardar
+                        registros_df = validar_reglas_negocio(df_cargado)
+                        exito, mensaje = guardar_datos_editados(registros_df)
+                        if exito:
+                            st.sidebar.success("✅ Datos actualizados")
+                        else:
+                            st.sidebar.error("❌ Error al guardar")
+                except:
+                    st.sidebar.error("❌ Error al leer archivo")
+            
+            if st.sidebar.button("🚪 Cerrar Sesión"):
+                st.session_state.admin_authenticated = False
+                st.rerun()
+        
+        st.sidebar.markdown("---")
+
         # Cargar datos
         registros_df, meta_df = cargar_datos()
 
@@ -2469,6 +2661,8 @@ def main():
         exito, mensaje = guardar_datos_editados(registros_df)
         if not exito:
             st.warning(f"No se pudieron guardar los plazos actualizados: {mensaje}")
+        else:
+            st.info("✅ Plazos automáticos actualizados y guardados correctamente.")
 
         # Verificar si los DataFrames están vacíos o no tienen registros
         if registros_df.empty:
@@ -2503,6 +2697,44 @@ def main():
         # Mostrar el número de registros cargados
         st.success(f"Se han cargado {len(registros_df)} registros de la base de datos.")
 
+        # AGREGAR FUNCIONALIDAD EXCEL AL SIDEBAR CON AUTENTICACIÓN ADMIN
+        # Sección de gestión de datos Excel - Solo para administradores
+        st.sidebar.markdown("---")
+        st.sidebar.markdown('<div class="subtitle">📊 Gestión de Datos</div>', unsafe_allow_html=True)
+        
+        # Verificar si el usuario está autenticado como admin
+        if verificar_admin():
+            # Usuario autenticado - mostrar funcionalidad completa
+            mostrar_gestion_datos_admin(registros_df)
+        else:
+            # Usuario no autenticado - mostrar formulario de login
+            mostrar_login_admin()
+        
+        # Información adicional
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("**💡 Información:**")
+        if verificar_admin():
+            st.sidebar.markdown("""
+            - ✅ **Modo Administrador Activo**
+            - Use Excel para edición masiva de datos
+            - Mantenga siempre una copia de respaldo
+            - Los plazos se calculan automáticamente
+            - Las validaciones se aplican al cargar
+            """)
+        else:
+            st.sidebar.markdown("""
+            - 🔒 **Funciones de administrador bloqueadas**
+            - Se requiere autenticación para gestionar datos
+            - Contacte al administrador del sistema
+            - Solo lectura de datos disponible
+            """)
+        
+        st.sidebar.markdown("---")
+
+        # Si deseas ver las columnas cargadas (útil para depuración)
+        #if st.checkbox("Mostrar columnas cargadas", value=False):
+        #    st.write("Columnas en registros_df:", list(registros_df.columns))
+
         # Aplicar validaciones de reglas de negocio
         registros_df = validar_reglas_negocio(registros_df)
 
@@ -2513,10 +2745,10 @@ def main():
             Se aplican las siguientes reglas de validación:
             1. Si 'Entrega acuerdo de compromiso' no está vacío, 'Acuerdo de compromiso' se actualiza a 'SI'
             2. Si 'Análisis y cronograma' tiene fecha, 'Análisis de información' se actualiza a 'SI'
-            3. Al introducir fecha en 'Estándares', los campos que no estén 'Completo' se actualizan automáticamente a 'No aplica'
-            4. Si se introduce fecha en 'Publicación', 'Disponer datos temáticos' se actualiza automáticamente a 'SI'
-            5. Para introducir una fecha en 'Fecha de oficio de cierre', debe tener la etapa de Publicación completada
-            6. Al introducir una fecha en 'Fecha de oficio de cierre', el campo 'Estado' se actualiza automáticamente a 'Completado' y el avance al 100%
+            3. Si se introduce fecha en 'Estándares', se verifica que los campos con sufijo (completo) estén 'Completo'
+            4. Si se introduce fecha en 'Publicación', se verifica que 'Disponer datos temáticos' sea 'SI'
+            5. Para introducir una fecha en 'Fecha de oficio de cierre', todos los campos Si/No deben estar marcados como 'Si', todos los estándares deben estar 'Completo' y todas las fechas diligenciadas.
+            6. Al introducir una fecha en 'Fecha de oficio de cierre', el campo 'Estado' se actualizará automáticamente a 'Completado'.
             """)
             mostrar_estado_validaciones(registros_df, st)
 
@@ -2550,9 +2782,12 @@ def main():
         # Agregar columna de estado de fechas
         registros_df['Estado Fechas'] = registros_df.apply(verificar_estado_fechas, axis=1)
 
-        # Crear pestañas - MODIFICADO: Cambio de "Datos Completos" a "Edición de Registros"
-        # Cambiar la declaración de pestañas
-        tab1, tab2, tab3, tab4 = st.tabs(["Dashboard", "Edición de Registros", "Alertas de Vencimientos", "Reportes"])
+        # APLICAR FILTROS GLOBALES PARA TODAS LAS PESTAÑAS
+        # Estos filtros se aplicarán por defecto (sin filtros aplicados)
+        df_filtrado_global = registros_df.copy()
+
+        # Crear pestañas - RESTAURANDO LA PESTAÑA FALTANTE
+        tab1, tab2, tab3, tab4 = st.tabs(["Dashboard", "Edición de Registros", "Detalle de Cronogramas", "Alertas de Vencimientos"])
      
         with tab1:
             # FILTROS PARA DASHBOARD
@@ -2577,15 +2812,9 @@ def main():
                 tipo_dato_seleccionado = st.selectbox('Tipo de Dato', tipos_dato, key="dash_tipo")
             
             with col4:
-                # CAMBIO 1: Filtro por nivel de información dependiente de entidad
-                if entidad_seleccionada != 'Todas':
-                    # Filtrar niveles según la entidad seleccionada
-                    niveles_entidad = registros_df[registros_df['Entidad'] == entidad_seleccionada]['Nivel Información '].dropna().unique().tolist()
-                    niveles = ['Todos'] + sorted(niveles_entidad)
-                    nivel_seleccionado = st.selectbox('Nivel de Información', niveles, key="dash_nivel")
-                else:
-                    # Si no hay entidad seleccionada, no mostrar el filtro de nivel
-                    nivel_seleccionado = 'Todos'
+                # Filtro por nivel de información
+                niveles = ['Todos'] + sorted(registros_df['Nivel Información '].dropna().unique().tolist())
+                nivel_seleccionado = st.selectbox('Nivel de Información', niveles, key="dash_nivel")
             
             # Aplicar filtros
             df_filtrado = registros_df.copy()
@@ -2604,70 +2833,111 @@ def main():
             
             st.markdown("---")  # Separador visual
             
-            mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registros_df)     
+            mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registros_df, 
+                            entidad_seleccionada, funcionario_seleccionado, tipo_dato_seleccionado, nivel_seleccionado)     
         with tab2:
             registros_df = mostrar_edicion_registros(registros_df)
 
         with tab3:
-            # CAMBIO 2: Eliminar filtro de tipo de dato en la pestaña alertas
-            # Ya no hay filtros en la parte superior de alertas
-            st.markdown("---")  # Separador visual
-    
-            mostrar_alertas_vencimientos(registros_df)
-
-        with tab4:
-            # Nueva pestaña de Reportes
+            # PESTAÑA RESTAURADA: Detalle de Cronogramas
+            # Aplicar los mismos filtros que en Dashboard para consistencia
             st.markdown("### 🔍 Filtros")
-            
-            # Primera fila de filtros
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                # 1. Filtro por tipo de dato
-                tipos_dato_reporte = ['Todos'] + sorted(registros_df['TipoDato'].dropna().unique().tolist())
-                tipo_dato_reporte = st.selectbox('Tipo de Dato', tipos_dato_reporte, key="reporte_tipo")
+                # Filtro por entidad
+                entidades_detalle = ['Todas'] + sorted(registros_df['Entidad'].unique().tolist())
+                entidad_detalle = st.selectbox('Entidad', entidades_detalle, key="detalle_entidad")
             
             with col2:
-                # 2. Filtro por acuerdo de compromiso suscrito
-                acuerdo_opciones = ['Todos', 'Suscrito', 'No Suscrito']
-                acuerdo_filtro = st.selectbox('Acuerdo de Compromiso', acuerdo_opciones, key="reporte_acuerdo")
+                # Filtro por funcionario
+                funcionarios_detalle = ['Todos']
+                if 'Funcionario' in registros_df.columns:
+                    funcionarios_detalle += sorted(registros_df['Funcionario'].dropna().unique().tolist())
+                funcionario_detalle = st.selectbox('Funcionario', funcionarios_detalle, key="detalle_funcionario")
             
             with col3:
-                # 3. Filtro por análisis y cronograma
-                analisis_opciones = ['Todos', 'Completado', 'No Completado']
-                analisis_filtro = st.selectbox('Análisis y Cronograma', analisis_opciones, key="reporte_analisis")
-            
-            # Segunda fila de filtros
-            col4, col5, col6 = st.columns(3)
+                # Filtro por tipo de dato
+                tipos_dato_detalle = ['Todos'] + sorted(registros_df['TipoDato'].dropna().unique().tolist())
+                tipo_dato_detalle = st.selectbox('Tipo de Dato', tipos_dato_detalle, key="detalle_tipo")
             
             with col4:
-                # 4. Filtro por estándares completado
-                estandares_opciones = ['Todos', 'Completado', 'No Completado']
-                estandares_filtro = st.selectbox('Estándares', estandares_opciones, key="reporte_estandares")
+                # Filtro por nivel de información
+                niveles_detalle = ['Todos'] + sorted(registros_df['Nivel Información '].dropna().unique().tolist())
+                nivel_detalle = st.selectbox('Nivel de Información', niveles_detalle, key="detalle_nivel")
             
-            with col5:
-                # 5. Filtro por publicación
-                publicacion_opciones = ['Todos', 'Completado', 'No Completado']
-                publicacion_filtro = st.selectbox('Publicación', publicacion_opciones, key="reporte_publicacion")
+            # Aplicar filtros para detalle
+            df_filtrado_detalle = registros_df.copy()
             
-            with col6:
-                # 6. Filtro por finalizado
-                finalizado_opciones = ['Todos', 'Finalizado', 'No Finalizado']
-                finalizado_filtro = st.selectbox('Finalizado', finalizado_opciones, key="reporte_finalizado")
+            if entidad_detalle != 'Todas':
+                df_filtrado_detalle = df_filtrado_detalle[df_filtrado_detalle['Entidad'] == entidad_detalle]
+            
+            if funcionario_detalle != 'Todos' and 'Funcionario' in df_filtrado_detalle.columns:
+                df_filtrado_detalle = df_filtrado_detalle[df_filtrado_detalle['Funcionario'] == funcionario_detalle]
+            
+            if tipo_dato_detalle != 'Todos':
+                df_filtrado_detalle = df_filtrado_detalle[df_filtrado_detalle['TipoDato'].str.upper() == tipo_dato_detalle.upper()]
+            
+            if nivel_detalle != 'Todos':
+                df_filtrado_detalle = df_filtrado_detalle[df_filtrado_detalle['Nivel Información '] == nivel_detalle]
             
             st.markdown("---")  # Separador visual
             
-            mostrar_reportes(registros_df, tipo_dato_reporte, acuerdo_filtro, analisis_filtro, 
-                           estandares_filtro, publicacion_filtro, finalizado_filtro)
+            mostrar_detalle_cronogramas(df_filtrado_detalle)
+
+        with tab4:
+            # FILTRO PARA ALERTAS
+            st.markdown("### 🔍 Filtro")
+            col1, col2, col3 = st.columns([1, 1, 2])
+            
+            with col1:
+                # Filtro por tipo de dato
+                tipos_dato_alertas = ['Todos'] + sorted(registros_df['TipoDato'].dropna().unique().tolist())
+                tipo_dato_alertas = st.selectbox('Tipo de Dato', tipos_dato_alertas, key="alertas_tipo")
+            
+            # Aplicar filtro
+            df_filtrado_alertas = registros_df.copy()
+            
+            if tipo_dato_alertas != 'Todos':
+                df_filtrado_alertas = df_filtrado_alertas[df_filtrado_alertas['TipoDato'].str.upper() == tipo_dato_alertas.upper()]
+            
+            st.markdown("---")  # Separador visual
+    
+            mostrar_alertas_vencimientos(df_filtrado_alertas)
         
         # Agregar sección de diagnóstico
-        mostrar_diagnostico(registros_df, meta_df, metas_nuevas_df, metas_actualizar_df, df_filtrado)
+        mostrar_diagnostico(registros_df, meta_df, metas_nuevas_df, metas_actualizar_df, df_filtrado_global)
 
         # Agregar sección de ayuda
         mostrar_ayuda()
 
+        # GUARDADO FINAL AUTOMÁTICO - Asegurar que todos los datos estén guardados
+        # Esto garantiza que cualquier cambio no guardado se preserve
+        try:
+            # Aplicar validaciones finales sin mostrar mensajes
+            registros_df_final = validar_reglas_negocio(registros_df)
+            registros_df_final = actualizar_plazo_analisis(registros_df_final)
+            registros_df_final = actualizar_plazo_cronograma(registros_df_final)
+            registros_df_final = actualizar_plazo_oficio_cierre(registros_df_final)
+            registros_df_final['Porcentaje Avance'] = registros_df_final.apply(calcular_porcentaje_avance, axis=1)
+            registros_df_final['Estado Fechas'] = registros_df_final.apply(verificar_estado_fechas, axis=1)
+            
+            # Guardar sin mostrar mensaje
+            guardar_datos_editados(registros_df_final)
+            
+        except Exception as e:
+            # En caso de error en el guardado final, mostrar advertencia
+            st.sidebar.warning(f"⚠️ Advertencia: Error en guardado automático final: {str(e)}")
+
     except Exception as e:
         mostrar_error(e)
+        
+        # Intentar guardar datos como medida de seguridad incluso en caso de error
+        try:
+            if 'registros_df' in locals():
+                guardar_datos_editados(registros_df)
+        except:
+            pass  # Si falla, no podemos hacer más
 
 
 if __name__ == "__main__":
