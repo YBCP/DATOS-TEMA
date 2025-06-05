@@ -550,7 +550,7 @@ def mostrar_edicion_registros(registros_df):
 
             # Gestión acceso a datos (como primer campo de esta sección)
             if 'Gestion acceso a los datos y documentos requeridos ' in row:
-                gestion_acceso = st.selectbox(
+                                    gestion_acceso = st.selectbox(
                     "Gestión acceso a los datos",
                     options=["", "Si", "No"],
                     index=1 if row['Gestion acceso a los datos y documentos requeridos '].upper() in ["SI", "SÍ",
@@ -2077,7 +2077,7 @@ def mostrar_alertas_vencimientos(registros_df):
         # Filtros para la tabla de alertas
         st.markdown("### Filtrar Alertas")
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
 
         with col1:
             tipo_alerta_filtro = st.multiselect(
@@ -2107,6 +2107,15 @@ def mostrar_alertas_vencimientos(registros_df):
             else:
                 funcionario_filtro = ["Todos"]
 
+        with col4:
+            # CAMBIO 3: Agregar filtro de Tipo de Dato en la sección "Filtrar Alertas"
+            tipos_dato_alertas = ['Todos'] + sorted(registros_df['TipoDato'].dropna().unique().tolist())
+            tipo_dato_filtro_alertas = st.multiselect(
+                "Tipo de Dato",
+                options=tipos_dato_alertas,
+                default=["Todos"]
+            )
+
         # Aplicar filtros
         df_alertas_filtrado = df_alertas.copy()
 
@@ -2118,6 +2127,12 @@ def mostrar_alertas_vencimientos(registros_df):
 
         if 'Funcionario' in df_alertas.columns and funcionario_filtro and "Todos" not in funcionario_filtro:
             df_alertas_filtrado = df_alertas_filtrado[df_alertas_filtrado['Funcionario'].isin(funcionario_filtro)]
+
+        # CAMBIO 3: Aplicar filtro de tipo de dato
+        if tipo_dato_filtro_alertas and "Todos" not in tipo_dato_filtro_alertas:
+            # Necesitamos obtener los códigos de los registros que coinciden con el tipo de dato
+            codigos_tipo_dato = registros_df[registros_df['TipoDato'].isin(tipo_dato_filtro_alertas)]['Cod'].tolist()
+            df_alertas_filtrado = df_alertas_filtrado[df_alertas_filtrado['Cod'].isin(codigos_tipo_dato)]
 
         # Mostrar tabla de alertas con formato
         st.markdown("### Listado de Alertas")
@@ -2277,10 +2292,6 @@ def main():
         # Mostrar el número de registros cargados
         st.success(f"Se han cargado {len(registros_df)} registros de la base de datos.")
 
-        # Si deseas ver las columnas cargadas (útil para depuración)
-        #if st.checkbox("Mostrar columnas cargadas", value=False):
-        #    st.write("Columnas en registros_df:", list(registros_df.columns))
-
         # Aplicar validaciones de reglas de negocio
         registros_df = validar_reglas_negocio(registros_df)
 
@@ -2355,9 +2366,15 @@ def main():
                 tipo_dato_seleccionado = st.selectbox('Tipo de Dato', tipos_dato, key="dash_tipo")
             
             with col4:
-                # Filtro por nivel de información
-                niveles = ['Todos'] + sorted(registros_df['Nivel Información '].dropna().unique().tolist())
-                nivel_seleccionado = st.selectbox('Nivel de Información', niveles, key="dash_nivel")
+                # CAMBIO 1: Filtro por nivel de información dependiente de entidad
+                if entidad_seleccionada != 'Todas':
+                    # Filtrar niveles según la entidad seleccionada
+                    niveles_entidad = registros_df[registros_df['Entidad'] == entidad_seleccionada]['Nivel Información '].dropna().unique().tolist()
+                    niveles = ['Todos'] + sorted(niveles_entidad)
+                    nivel_seleccionado = st.selectbox('Nivel de Información', niveles, key="dash_nivel")
+                else:
+                    # Si no hay entidad seleccionada, no mostrar el filtro de nivel
+                    nivel_seleccionado = 'Todos'
             
             # Aplicar filtros
             df_filtrado = registros_df.copy()
@@ -2381,24 +2398,11 @@ def main():
             registros_df = mostrar_edicion_registros(registros_df)
 
         with tab3:
-            # FILTRO PARA ALERTAS
-            st.markdown("### 🔍 Filtro")
-            col1, col2, col3 = st.columns([1, 1, 2])
-            
-            with col1:
-                # Filtro por tipo de dato
-                tipos_dato_alertas = ['Todos'] + sorted(registros_df['TipoDato'].dropna().unique().tolist())
-                tipo_dato_alertas = st.selectbox('Tipo de Dato', tipos_dato_alertas, key="alertas_tipo")
-            
-            # Aplicar filtro
-            df_filtrado_alertas = registros_df.copy()
-            
-            if tipo_dato_alertas != 'Todos':
-                df_filtrado_alertas = df_filtrado_alertas[df_filtrado_alertas['TipoDato'].str.upper() == tipo_dato_alertas.upper()]
-            
+            # CAMBIO 2: Eliminar filtro de tipo de dato en la pestaña alertas
+            # Ya no hay filtros en la parte superior de alertas
             st.markdown("---")  # Separador visual
     
-            mostrar_alertas_vencimientos(df_filtrado_alertas)
+            mostrar_alertas_vencimientos(registros_df)
         
         # Agregar sección de diagnóstico
         mostrar_diagnostico(registros_df, meta_df, metas_nuevas_df, metas_actualizar_df, df_filtrado)
