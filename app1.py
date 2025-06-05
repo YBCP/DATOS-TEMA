@@ -2221,6 +2221,63 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
+        # Cargar datos
+        registros_df, meta_df = cargar_datos()
+
+        # Asegurar que las columnas requeridas existan
+        columnas_requeridas = ['Cod', 'Entidad', 'TipoDato', 'Acuerdo de compromiso',
+                               'Análisis y cronograma', 'Estándares', 'Publicación',
+                               'Nivel Información ', 'Fecha de entrega de información',
+                               'Plazo de análisis', 'Plazo de cronograma', 'Plazo de oficio de cierre']
+
+        for columna in columnas_requeridas:
+            if columna not in registros_df.columns:
+                registros_df[columna] = ''
+
+        # Actualizar automáticamente todos los plazos
+        registros_df = actualizar_plazo_analisis(registros_df)
+        registros_df = actualizar_plazo_cronograma(registros_df)
+        registros_df = actualizar_plazo_oficio_cierre(registros_df)
+
+        # Guardar los datos actualizados inmediatamente
+        exito, mensaje = guardar_datos_editados(registros_df)
+        if not exito:
+            st.warning(f"No se pudieron guardar los plazos actualizados: {mensaje}")
+
+        # Verificar si los DataFrames están vacíos o no tienen registros
+        if registros_df.empty:
+            st.error(
+                "No se pudieron cargar datos de registros. El archivo registros.csv debe existir en el directorio.")
+            st.info(
+                "Por favor, asegúrate de que el archivo registros.csv existe y está correctamente formateado. " +
+                "El archivo debe tener al menos las siguientes columnas: 'Cod', 'Entidad', 'TipoDato', 'Nivel Información ', " +
+                "'Acuerdo de compromiso', 'Análisis y cronograma', 'Estándares', 'Publicación', 'Fecha de entrega de información'."
+            )
+            return
+
+        if meta_df.empty:
+            st.warning("No se pudieron cargar datos de metas. El archivo meta.csv debe existir en el directorio.")
+            st.info(
+                "Algunas funcionalidades relacionadas con las metas podrían no estar disponibles. " +
+                "Por favor, asegúrate de que el archivo meta.csv existe y está correctamente formateado."
+            )
+            # Creamos un DataFrame de metas básico para que la aplicación pueda continuar
+            meta_df = pd.DataFrame({
+                0: ["Fecha", "15/01/2025", "31/01/2025"],
+                1: [0, 0, 0],
+                2: [0, 0, 0],
+                3: [0, 0, 0],
+                4: [0, 0, 0],
+                6: [0, 0, 0],
+                7: [0, 0, 0],
+                8: [0, 0, 0],
+                9: [0, 0, 0]
+            })
+
+        # Mostrar el número de registros cargados
+        st.success(f"Se han cargado {len(registros_df)} registros de la base de datos.")
+
+        # AGREGAR FUNCIONALIDAD EXCEL AL SIDEBAR DESPUÉS DE CARGAR DATOS
         # Sección de gestión de datos Excel
         st.sidebar.markdown("---")
         st.sidebar.markdown('<div class="subtitle">📊 Gestión de Datos</div>', unsafe_allow_html=True)
@@ -2360,62 +2417,6 @@ def main():
         """)
         
         st.sidebar.markdown("---")
-
-        # Cargar datos
-        registros_df, meta_df = cargar_datos()
-
-        # Asegurar que las columnas requeridas existan
-        columnas_requeridas = ['Cod', 'Entidad', 'TipoDato', 'Acuerdo de compromiso',
-                               'Análisis y cronograma', 'Estándares', 'Publicación',
-                               'Nivel Información ', 'Fecha de entrega de información',
-                               'Plazo de análisis', 'Plazo de cronograma', 'Plazo de oficio de cierre']
-
-        for columna in columnas_requeridas:
-            if columna not in registros_df.columns:
-                registros_df[columna] = ''
-
-        # Actualizar automáticamente todos los plazos
-        registros_df = actualizar_plazo_analisis(registros_df)
-        registros_df = actualizar_plazo_cronograma(registros_df)
-        registros_df = actualizar_plazo_oficio_cierre(registros_df)
-
-        # Guardar los datos actualizados inmediatamente
-        exito, mensaje = guardar_datos_editados(registros_df)
-        if not exito:
-            st.warning(f"No se pudieron guardar los plazos actualizados: {mensaje}")
-
-        # Verificar si los DataFrames están vacíos o no tienen registros
-        if registros_df.empty:
-            st.error(
-                "No se pudieron cargar datos de registros. El archivo registros.csv debe existir en el directorio.")
-            st.info(
-                "Por favor, asegúrate de que el archivo registros.csv existe y está correctamente formateado. " +
-                "El archivo debe tener al menos las siguientes columnas: 'Cod', 'Entidad', 'TipoDato', 'Nivel Información ', " +
-                "'Acuerdo de compromiso', 'Análisis y cronograma', 'Estándares', 'Publicación', 'Fecha de entrega de información'."
-            )
-            return
-
-        if meta_df.empty:
-            st.warning("No se pudieron cargar datos de metas. El archivo meta.csv debe existir en el directorio.")
-            st.info(
-                "Algunas funcionalidades relacionadas con las metas podrían no estar disponibles. " +
-                "Por favor, asegúrate de que el archivo meta.csv existe y está correctamente formateado."
-            )
-            # Creamos un DataFrame de metas básico para que la aplicación pueda continuar
-            meta_df = pd.DataFrame({
-                0: ["Fecha", "15/01/2025", "31/01/2025"],
-                1: [0, 0, 0],
-                2: [0, 0, 0],
-                3: [0, 0, 0],
-                4: [0, 0, 0],
-                6: [0, 0, 0],
-                7: [0, 0, 0],
-                8: [0, 0, 0],
-                9: [0, 0, 0]
-            })
-
-        # Mostrar el número de registros cargados
-        st.success(f"Se han cargado {len(registros_df)} registros de la base de datos.")
 
         # Si deseas ver las columnas cargadas (útil para depuración)
         #if st.checkbox("Mostrar columnas cargadas", value=False):
