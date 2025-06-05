@@ -233,7 +233,8 @@ def verificar_completado_por_fecha(fecha_programada, fecha_completado=None):
 
 def calcular_porcentaje_avance(registro):
     """
-    Calcula el porcentaje de avance de un registro basado en los campos de completitud.
+    MODIFICADO: Calcula el porcentaje de avance de un registro basado en los campos de completitud.
+    Ahora considera "No aplica" como un estado válido (equivalente a "Completo").
 
     Ponderación:
     - Acuerdo de compromiso: 20%
@@ -275,8 +276,8 @@ def calcular_porcentaje_avance(registro):
         return avance
     except Exception as e:
         # En caso de error, retornar 0
-        st.warning(f"Error al calcular porcentaje de avance: {e}")
         return 0
+        
 def procesar_metas(meta_df):
     """Procesa las metas a partir del DataFrame de metas."""
     try:
