@@ -1,7 +1,7 @@
 # Validaciones_utils.py actualizado
 import pandas as pd
 import numpy as np
-from data_utils import procesar_fecha
+from data_utils import procesar_fecha, calcular_porcentaje_avance
 from datetime import datetime
 
 def verificar_condiciones_estandares(row):
@@ -76,10 +76,16 @@ def validar_reglas_negocio(df):
         if 'Suscripción acuerdo de compromiso' in row and pd.notna(row['Suscripción acuerdo de compromiso']) and str(
                 row['Suscripción acuerdo de compromiso']).strip() != '':
             df_actualizado.at[idx, 'Acuerdo de compromiso'] = 'Si'
+            # Recalcular porcentaje de avance
+            if 'Porcentaje Avance' in df_actualizado.columns:
+                df_actualizado.at[idx, 'Porcentaje Avance'] = calcular_porcentaje_avance(df_actualizado.iloc[idx])
 
         if 'Entrega acuerdo de compromiso' in row and pd.notna(row['Entrega acuerdo de compromiso']) and str(
                 row['Entrega acuerdo de compromiso']).strip() != '':
             df_actualizado.at[idx, 'Acuerdo de compromiso'] = 'Si'
+            # Recalcular porcentaje de avance
+            if 'Porcentaje Avance' in df_actualizado.columns:
+                df_actualizado.at[idx, 'Porcentaje Avance'] = calcular_porcentaje_avance(df_actualizado.iloc[idx])
 
         # Regla 2: Si análisis y cronograma tiene fecha, análisis de información y cronograma concertado = SI
         if 'Análisis y cronograma' in row and pd.notna(row['Análisis y cronograma']) and str(
@@ -90,6 +96,9 @@ def validar_reglas_negocio(df):
                     df_actualizado.at[idx, 'Análisis de información'] = 'Si'
                 if 'Cronograma Concertado' in df_actualizado.columns:
                     df_actualizado.at[idx, 'Cronograma Concertado'] = 'Si'
+                # Recalcular porcentaje de avance
+                if 'Porcentaje Avance' in df_actualizado.columns:
+                    df_actualizado.at[idx, 'Porcentaje Avance'] = calcular_porcentaje_avance(df_actualizado.iloc[idx])
 
         # Regla 3: MODIFICADA - Al introducir fecha en estándares, actualizar campos no completos a "No aplica"
         if 'Estándares' in row and pd.notna(row['Estándares']) and str(row['Estándares']).strip() != '':
@@ -107,12 +116,18 @@ def validar_reglas_negocio(df):
                         # Si no está "Completo", actualizar a "No aplica"
                         if str(valor_actual).strip().upper() != "COMPLETO":
                             df_actualizado.at[idx, campo] = "No aplica"
+                # Recalcular porcentaje de avance
+                if 'Porcentaje Avance' in df_actualizado.columns:
+                    df_actualizado.at[idx, 'Porcentaje Avance'] = calcular_porcentaje_avance(df_actualizado.iloc[idx])
 
         # Regla 4: MODIFICADA - Si publicación tiene fecha, disponer datos temáticos = SI automáticamente
         if 'Publicación' in row and pd.notna(row['Publicación']) and str(row['Publicación']).strip() != '':
             fecha = procesar_fecha(row['Publicación'])
             if fecha is not None and 'Disponer datos temáticos' in df_actualizado.columns:
                 df_actualizado.at[idx, 'Disponer datos temáticos'] = 'Si'
+                # Recalcular porcentaje de avance
+                if 'Porcentaje Avance' in df_actualizado.columns:
+                    df_actualizado.at[idx, 'Porcentaje Avance'] = calcular_porcentaje_avance(df_actualizado.iloc[idx])
 
         # Regla 5: MODIFICADA - Si oficio de cierre tiene fecha, actualizar estado a "Completado" (validación simple)
         if 'Fecha de oficio de cierre' in row and pd.notna(row['Fecha de oficio de cierre']) and str(
@@ -127,18 +142,27 @@ def validar_reglas_negocio(df):
                     # Actualizar estado a "Completado"
                     if 'Estado' in df_actualizado.columns:
                         df_actualizado.at[idx, 'Estado'] = 'Completado'
+                    # Recalcular porcentaje de avance (será 100% automáticamente)
+                    if 'Porcentaje Avance' in df_actualizado.columns:
+                        df_actualizado.at[idx, 'Porcentaje Avance'] = calcular_porcentaje_avance(df_actualizado.iloc[idx])
                 else:
                     # Si no tiene publicación, eliminar la fecha de oficio de cierre
                     df_actualizado.at[idx, 'Fecha de oficio de cierre'] = ''
                     # Y cambiar estado a "En proceso" si era "Completado"
                     if 'Estado' in df_actualizado.columns and df_actualizado.at[idx, 'Estado'] == 'Completado':
                         df_actualizado.at[idx, 'Estado'] = 'En proceso'
+                    # Recalcular porcentaje de avance
+                    if 'Porcentaje Avance' in df_actualizado.columns:
+                        df_actualizado.at[idx, 'Porcentaje Avance'] = calcular_porcentaje_avance(df_actualizado.iloc[idx])
         
         # Regla 6: Si Estado es "Completado" pero no hay fecha de oficio de cierre, cambiar Estado a "En proceso"
         elif 'Estado' in df_actualizado.columns and df_actualizado.at[idx, 'Estado'] == 'Completado':
             # Verificar si hay fecha de oficio de cierre válida
             if 'Fecha de oficio de cierre' not in row or pd.isna(row['Fecha de oficio de cierre']) or row['Fecha de oficio de cierre'] == '':
                 df_actualizado.at[idx, 'Estado'] = 'En proceso'
+                # Recalcular porcentaje de avance
+                if 'Porcentaje Avance' in df_actualizado.columns:
+                    df_actualizado.at[idx, 'Porcentaje Avance'] = calcular_porcentaje_avance(df_actualizado.iloc[idx])
 
     return df_actualizado
 
