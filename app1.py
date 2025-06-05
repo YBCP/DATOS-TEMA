@@ -1154,6 +1154,9 @@ def mostrar_edicion_registros(registros_df):
                                 # Actualizar Estado a "Completado" automáticamente
                                 registros_df.at[registros_df.index[indice_seleccionado], 'Estado'] = 'Completado'
 
+                                # Recalcular el porcentaje de avance (ahora será 100% automáticamente)
+                                registros_df.at[registros_df.index[indice_seleccionado], 'Porcentaje Avance'] = calcular_porcentaje_avance(registros_df.iloc[indice_seleccionado])
+
                                 edited = True
                                 # Guardar cambios
                                 registros_df = validar_reglas_negocio(registros_df)
