@@ -550,7 +550,7 @@ def mostrar_edicion_registros(registros_df):
 
             # Gestión acceso a datos (como primer campo de esta sección)
             if 'Gestion acceso a los datos y documentos requeridos ' in row:
-                gestion_acceso = st.selectbox(
+                                    gestion_acceso = st.selectbox(
                     "Gestión acceso a los datos",
                     options=["", "Si", "No"],
                     index=1 if row['Gestion acceso a los datos y documentos requeridos '].upper() in ["SI", "SÍ",
@@ -2190,6 +2190,254 @@ def mostrar_alertas_vencimientos(registros_df):
         st.success("¡No hay alertas de vencimientos pendientes!")
 
 
+# Función para mostrar la pestaña de reportes
+def mostrar_reportes(registros_df, tipo_dato_filtro, acuerdo_filtro, analisis_filtro, 
+                    estandares_filtro, publicacion_filtro, finalizado_filtro):
+    """Muestra la pestaña de reportes con tabla completa y filtros específicos."""
+    st.markdown('<div class="subtitle">Reportes de Registros</div>', unsafe_allow_html=True)
+    
+    # Aplicar filtros
+    df_filtrado = registros_df.copy()
+    
+    # Filtro por tipo de dato
+    if tipo_dato_filtro != 'Todos':
+        df_filtrado = df_filtrado[df_filtrado['TipoDato'].str.upper() == tipo_dato_filtro.upper()]
+    
+    # Filtro por acuerdo de compromiso suscrito
+    if acuerdo_filtro != 'Todos':
+        if acuerdo_filtro == 'Suscrito':
+            # Tiene fecha de suscripción
+            df_filtrado = df_filtrado[
+                (df_filtrado['Suscripción acuerdo de compromiso'].notna()) & 
+                (df_filtrado['Suscripción acuerdo de compromiso'] != '') |
+                (df_filtrado['Entrega acuerdo de compromiso'].notna()) & 
+                (df_filtrado['Entrega acuerdo de compromiso'] != '')
+            ]
+        else:  # No Suscrito
+            df_filtrado = df_filtrado[
+                ((df_filtrado['Suscripción acuerdo de compromiso'].isna()) | 
+                 (df_filtrado['Suscripción acuerdo de compromiso'] == '')) &
+                ((df_filtrado['Entrega acuerdo de compromiso'].isna()) | 
+                 (df_filtrado['Entrega acuerdo de compromiso'] == ''))
+            ]
+    
+    # Filtro por análisis y cronograma
+    if analisis_filtro != 'Todos':
+        if analisis_filtro == 'Con Fecha Real':
+            df_filtrado = df_filtrado[
+                (df_filtrado['Análisis y cronograma'].notna()) & 
+                (df_filtrado['Análisis y cronograma'] != '')
+            ]
+        else:  # Sin Fecha Real
+            df_filtrado = df_filtrado[
+                (df_filtrado['Análisis y cronograma'].isna()) | 
+                (df_filtrado['Análisis y cronograma'] == '')
+            ]
+    
+    # Filtro por estándares completado
+    if estandares_filtro != 'Todos':
+        if estandares_filtro == 'Con Fecha':
+            df_filtrado = df_filtrado[
+                (df_filtrado['Estándares'].notna()) & 
+                (df_filtrado['Estándares'] != '')
+            ]
+        else:  # Sin Fecha
+            df_filtrado = df_filtrado[
+                (df_filtrado['Estándares'].isna()) | 
+                (df_filtrado['Estándares'] == '')
+            ]
+    
+    # Filtro por publicación
+    if publicacion_filtro != 'Todos':
+        if publicacion_filtro == 'Con Fecha':
+            df_filtrado = df_filtrado[
+                (df_filtrado['Publicación'].notna()) & 
+                (df_filtrado['Publicación'] != '')
+            ]
+        else:  # Sin Fecha
+            df_filtrado = df_filtrado[
+                (df_filtrado['Publicación'].isna()) | 
+                (df_filtrado['Publicación'] == '')
+            ]
+    
+    # Filtro por finalizado
+    if finalizado_filtro != 'Todos':
+        if finalizado_filtro == 'Finalizado':
+            df_filtrado = df_filtrado[
+                (df_filtrado['Fecha de oficio de cierre'].notna()) & 
+                (df_filtrado['Fecha de oficio de cierre'] != '')
+            ]
+        else:  # No Finalizado
+            df_filtrado = df_filtrado[
+                (df_filtrado['Fecha de oficio de cierre'].isna()) | 
+                (df_filtrado['Fecha de oficio de cierre'] == '')
+            ]
+    
+    # Mostrar estadísticas del filtrado
+    st.markdown("### Resumen de Registros Filtrados")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        total_filtrados = len(df_filtrado)
+        st.markdown(f"""
+        <div class="metric-card">
+            <p style="font-size: 1rem; color: #64748b;">Total Filtrados</p>
+            <p style="font-size: 2.5rem; font-weight: bold; color: #1E40AF;">{total_filtrados}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        if total_filtrados > 0:
+            avance_promedio = df_filtrado['Porcentaje Avance'].mean()
+            st.markdown(f"""
+            <div class="metric-card">
+                <p style="font-size: 1rem; color: #64748b;">Avance Promedio</p>
+                <p style="font-size: 2.5rem; font-weight: bold; color: #047857;">{avance_promedio:.1f}%</p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="metric-card">
+                <p style="font-size: 1rem; color: #64748b;">Avance Promedio</p>
+                <p style="font-size: 2.5rem; font-weight: bold; color: #047857;">0%</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+    with col3:
+        if total_filtrados > 0:
+            completados = len(df_filtrado[df_filtrado['Porcentaje Avance'] == 100])
+            st.markdown(f"""
+            <div class="metric-card">
+                <p style="font-size: 1rem; color: #64748b;">Completados</p>
+                <p style="font-size: 2.5rem; font-weight: bold; color: #B45309;">{completados}</p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="metric-card">
+                <p style="font-size: 1rem; color: #64748b;">Completados</p>
+                <p style="font-size: 2.5rem; font-weight: bold; color: #B45309;">0</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+    with col4:
+        if total_filtrados > 0:
+            porcentaje_completados = (len(df_filtrado[df_filtrado['Porcentaje Avance'] == 100]) / total_filtrados * 100)
+            st.markdown(f"""
+            <div class="metric-card">
+                <p style="font-size: 1rem; color: #64748b;">% Completados</p>
+                <p style="font-size: 2.5rem; font-weight: bold; color: #BE185D;">{porcentaje_completados:.1f}%</p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="metric-card">
+                <p style="font-size: 1rem; color: #64748b;">% Completados</p>
+                <p style="font-size: 2.5rem; font-weight: bold; color: #BE185D;">0%</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # Mostrar tabla de registros filtrados
+    st.markdown("### Tabla de Registros")
+    
+    if df_filtrado.empty:
+        st.warning("No se encontraron registros que coincidan con los filtros seleccionados.")
+        return
+    
+    # Definir columnas a mostrar (misma estructura que el dashboard)
+    columnas_mostrar = [
+        'Cod', 'Entidad', 'Nivel Información ', 'Funcionario',
+        'Frecuencia actualizacion ', 'TipoDato',
+        'Suscripción acuerdo de compromiso', 'Entrega acuerdo de compromiso',
+        'Fecha de entrega de información', 'Plazo de análisis', 'Plazo de cronograma',
+        'Análisis y cronograma',
+        'Registro (completo)', 'ET (completo)', 'CO (completo)', 'DD (completo)', 'REC (completo)',
+        'SERVICIO (completo)',
+        'Estándares (fecha programada)', 'Estándares',
+        'Fecha de publicación programada', 'Publicación',
+        'Plazo de oficio de cierre', 'Fecha de oficio de cierre',
+        'Estado', 'Observación', 'Porcentaje Avance'
+    ]
+    
+    # Verificar que todas las columnas existan
+    columnas_mostrar_existentes = [col for col in columnas_mostrar if col in df_filtrado.columns]
+    df_mostrar = df_filtrado[columnas_mostrar_existentes].copy()
+    
+    # Aplicar formato a las fechas
+    columnas_fecha = [
+        'Suscripción acuerdo de compromiso', 'Entrega acuerdo de compromiso',
+        'Fecha de entrega de información', 'Plazo de análisis', 'Plazo de cronograma',
+        'Análisis y cronograma', 'Estándares (fecha programada)', 'Estándares',
+        'Fecha de publicación programada', 'Publicación',
+        'Plazo de oficio de cierre', 'Fecha de oficio de cierre'
+    ]
+    
+    for col in columnas_fecha:
+        if col in df_mostrar.columns:
+            df_mostrar[col] = df_mostrar[col].apply(lambda x: formatear_fecha(x) if es_fecha_valida(x) else "")
+    
+    # Mostrar dataframe con formato
+    st.dataframe(
+        df_mostrar
+        .style.format({'Porcentaje Avance': '{:.2f}%'})
+        .apply(highlight_estado_fechas, axis=1)
+        .background_gradient(cmap='RdYlGn', subset=['Porcentaje Avance']),
+        use_container_width=True
+    )
+    
+    # Botón para descargar reporte
+    st.markdown("### Descargar Reporte")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Descargar como Excel
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df_mostrar.to_excel(writer, sheet_name='Reporte Filtrado', index=False)
+
+        excel_data = output.getvalue()
+        st.download_button(
+            label="📊 Descargar reporte como Excel",
+            data=excel_data,
+            file_name=f"reporte_registros_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            help="Descarga el reporte filtrado en formato Excel"
+        )
+    
+    with col2:
+        # Descargar como CSV
+        csv = df_mostrar.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📄 Descargar reporte como CSV",
+            data=csv,
+            file_name=f"reporte_registros_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            help="Descarga el reporte filtrado en formato CSV"
+        )
+    
+    # Información adicional sobre los filtros aplicados
+    filtros_aplicados = []
+    if tipo_dato_filtro != 'Todos':
+        filtros_aplicados.append(f"Tipo de Dato: {tipo_dato_filtro}")
+    if acuerdo_filtro != 'Todos':
+        filtros_aplicados.append(f"Acuerdo de Compromiso: {acuerdo_filtro}")
+    if analisis_filtro != 'Todos':
+        filtros_aplicados.append(f"Análisis y Cronograma: {analisis_filtro}")
+    if estandares_filtro != 'Todos':
+        filtros_aplicados.append(f"Estándares: {estandares_filtro}")
+    if publicacion_filtro != 'Todos':
+        filtros_aplicados.append(f"Publicación: {publicacion_filtro}")
+    if finalizado_filtro != 'Todos':
+        filtros_aplicados.append(f"Finalizado: {finalizado_filtro}")
+    
+    if filtros_aplicados:
+        st.info(f"**Filtros aplicados:** {', '.join(filtros_aplicados)}")
+    else:
+        st.info("**Mostrando todos los registros** (sin filtros aplicados)")
+
+
 # Función para mostrar mensajes de error
 def mostrar_error(error):
     """Muestra mensajes de error formateados."""
@@ -2341,7 +2589,7 @@ def main():
 
         # Crear pestañas - MODIFICADO: Cambio de "Datos Completos" a "Edición de Registros"
         # Cambiar la declaración de pestañas
-        tab1, tab2, tab3 = st.tabs(["Dashboard", "Edición de Registros", "Alertas de Vencimientos"])
+        tab1, tab2, tab3, tab4 = st.tabs(["Dashboard", "Edición de Registros", "Alertas de Vencimientos", "Reportes"])
      
         with tab1:
             # FILTROS PARA DASHBOARD
@@ -2403,6 +2651,44 @@ def main():
             st.markdown("---")  # Separador visual
     
             mostrar_alertas_vencimientos(registros_df)
+
+        with tab4:
+            # Nueva pestaña de Reportes
+            st.markdown("### 🔍 Filtros")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                # Filtro por tipo de dato
+                tipos_dato_reporte = ['Todos'] + sorted(registros_df['TipoDato'].dropna().unique().tolist())
+                tipo_dato_reporte = st.selectbox('Tipo de Dato', tipos_dato_reporte, key="reporte_tipo")
+                
+                # Filtro por acuerdo de compromiso suscrito
+                acuerdo_opciones = ['Todos', 'Suscrito', 'No Suscrito']
+                acuerdo_filtro = st.selectbox('Acuerdo de Compromiso', acuerdo_opciones, key="reporte_acuerdo")
+            
+            with col2:
+                # Filtro por análisis y cronograma
+                analisis_opciones = ['Todos', 'Con Fecha Real', 'Sin Fecha Real']
+                analisis_filtro = st.selectbox('Análisis y Cronograma', analisis_opciones, key="reporte_analisis")
+                
+                # Filtro por estándares completado
+                estandares_opciones = ['Todos', 'Con Fecha', 'Sin Fecha']
+                estandares_filtro = st.selectbox('Estándares Completado', estandares_opciones, key="reporte_estandares")
+            
+            with col3:
+                # Filtro por publicación
+                publicacion_opciones = ['Todos', 'Con Fecha', 'Sin Fecha']
+                publicacion_filtro = st.selectbox('Publicación', publicacion_opciones, key="reporte_publicacion")
+                
+                # Filtro por finalizado
+                finalizado_opciones = ['Todos', 'Finalizado', 'No Finalizado']
+                finalizado_filtro = st.selectbox('Finalizado', finalizado_opciones, key="reporte_finalizado")
+            
+            st.markdown("---")  # Separador visual
+            
+            mostrar_reportes(registros_df, tipo_dato_reporte, acuerdo_filtro, analisis_filtro, 
+                           estandares_filtro, publicacion_filtro, finalizado_filtro)
         
         # Agregar sección de diagnóstico
         mostrar_diagnostico(registros_df, meta_df, metas_nuevas_df, metas_actualizar_df, df_filtrado)
