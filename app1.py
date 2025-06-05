@@ -550,7 +550,7 @@ def mostrar_edicion_registros(registros_df):
 
             # Gestión acceso a datos (como primer campo de esta sección)
             if 'Gestion acceso a los datos y documentos requeridos ' in row:
-                gestion_acceso = st.selectbox(
+                                    gestion_acceso = st.selectbox(
                     "Gestión acceso a los datos",
                     options=["", "Si", "No"],
                     index=1 if row['Gestion acceso a los datos y documentos requeridos '].upper() in ["SI", "SÍ",
@@ -2656,32 +2656,39 @@ def main():
             # Nueva pestaña de Reportes
             st.markdown("### 🔍 Filtros")
             
+            # Primera fila de filtros
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                # Filtro por tipo de dato
+                # 1. Filtro por tipo de dato
                 tipos_dato_reporte = ['Todos'] + sorted(registros_df['TipoDato'].dropna().unique().tolist())
                 tipo_dato_reporte = st.selectbox('Tipo de Dato', tipos_dato_reporte, key="reporte_tipo")
-                
-                # Filtro por acuerdo de compromiso suscrito
+            
+            with col2:
+                # 2. Filtro por acuerdo de compromiso suscrito
                 acuerdo_opciones = ['Todos', 'Suscrito', 'No Suscrito']
                 acuerdo_filtro = st.selectbox('Acuerdo de Compromiso', acuerdo_opciones, key="reporte_acuerdo")
             
-            with col2:
-                # Filtro por análisis y cronograma
-                analisis_opciones = ['Todos', 'Con Fecha Real', 'Sin Fecha Real']
-                analisis_filtro = st.selectbox('Análisis y Cronograma', analisis_opciones, key="reporte_analisis")
-                
-                # Filtro por estándares completado
-                estandares_opciones = ['Todos', 'Con Fecha', 'Sin Fecha']
-                estandares_filtro = st.selectbox('Estándares Completado', estandares_opciones, key="reporte_estandares")
-            
             with col3:
-                # Filtro por publicación
-                publicacion_opciones = ['Todos', 'Con Fecha', 'Sin Fecha']
+                # 3. Filtro por análisis y cronograma
+                analisis_opciones = ['Todos', 'Completado', 'No Completado']
+                analisis_filtro = st.selectbox('Análisis y Cronograma', analisis_opciones, key="reporte_analisis")
+            
+            # Segunda fila de filtros
+            col4, col5, col6 = st.columns(3)
+            
+            with col4:
+                # 4. Filtro por estándares completado
+                estandares_opciones = ['Todos', 'Completado', 'No Completado']
+                estandares_filtro = st.selectbox('Estándares', estandares_opciones, key="reporte_estandares")
+            
+            with col5:
+                # 5. Filtro por publicación
+                publicacion_opciones = ['Todos', 'Completado', 'No Completado']
                 publicacion_filtro = st.selectbox('Publicación', publicacion_opciones, key="reporte_publicacion")
-                
-                # Filtro por finalizado
+            
+            with col6:
+                # 6. Filtro por finalizado
                 finalizado_opciones = ['Todos', 'Finalizado', 'No Finalizado']
                 finalizado_filtro = st.selectbox('Finalizado', finalizado_opciones, key="reporte_finalizado")
             
