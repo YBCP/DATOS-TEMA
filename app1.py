@@ -302,13 +302,11 @@ def mostrar_edicion_registros(registros_df):
     - Se aplicarán automáticamente las siguientes validaciones:
         1. Si 'Entrega acuerdo de compromiso' no está vacío, 'Acuerdo de compromiso' se actualizará a 'SI'
         2. Si 'Análisis y cronograma' tiene fecha, 'Análisis de información' se actualizará a 'SI'
-        3. Si introduce fecha en 'Estándares', se verificará que los campos 'Registro (completo)', 'ET (completo)', 'CO (completo)', 'DD (completo)', 'REC (completo)' y 'SERVICIO (completo)' estén 'Completo'
-        4. Si introduce fecha en 'Publicación', se verificará que 'Disponer datos temáticos' sea 'SI'
-        5. Si 'Disponer datos temáticos' se marca como 'No', se eliminará la fecha de 'Publicación' si existe.
-        6. Para introducir una fecha en 'Fecha de oficio de cierre', todos los campos Si/No deben estar marcados como 'Si', todos los estándares deben estar 'Completo' y todas las fechas diligenciadas y anteriores a la fecha de cierre.
-        7. Al introducir una fecha en 'Fecha de oficio de cierre', el campo 'Estado' se actualizará automáticamente a 'Completado'.
-        8. Si se modifica algún campo de forma que ya no cumpla con las reglas para 'Fecha de oficio de cierre', esta fecha se borrará automáticamente.
-        9. Solo los registros con 'Fecha de oficio de cierre' válida pueden tener estado 'Completado'.
+        3. Al introducir fecha en 'Estándares', los campos que no estén 'Completo' se actualizarán automáticamente a 'No aplica'
+        4. Si introduce fecha en 'Publicación', 'Disponer datos temáticos' se actualizará automáticamente a 'SI'
+        5. Para introducir una fecha en 'Fecha de oficio de cierre', debe tener la etapa de Publicación completada (con fecha)
+        6. Al introducir una fecha en 'Fecha de oficio de cierre', el campo 'Estado' se actualizará automáticamente a 'Completado' y el avance al 100%
+        7. Si se elimina la fecha de oficio de cierre, el Estado se cambiará automáticamente a 'En proceso'
     """)
     # Mostrar mensaje de guardado si existe
     if st.session_state.mensaje_guardado:
@@ -347,9 +345,6 @@ def mostrar_edicion_registros(registros_df):
 
         # Flag para detectar cambios
         edited = False
-
-        # Flag para detectar si se ha introducido fecha en estándares sin validadores completos
-        estandares_warning = False
 
         # Contenedor para los datos de edición
         with st.container():
@@ -550,7 +545,7 @@ def mostrar_edicion_registros(registros_df):
 
             # Gestión acceso a datos (como primer campo de esta sección)
             if 'Gestion acceso a los datos y documentos requeridos ' in row:
-                gestion_acceso = st.selectbox(
+                                    gestion_acceso = st.selectbox(
                     "Gestión acceso a los datos",
                     options=["", "Si", "No"],
                     index=1 if row['Gestion acceso a los datos y documentos requeridos '].upper() in ["SI", "SÍ",
@@ -774,48 +769,37 @@ def mostrar_edicion_registros(registros_df):
                 # En la sección de "Fecha de estándares (real)"
                 # Verificar si se ha introducido una fecha nueva en estándares
                 if nueva_fecha_estandares_str and nueva_fecha_estandares_str != fecha_original:
-                    # Verificar si todos los campos de estándares están completos
+                    # Actualizar la fecha sin restricciones
+                    registros_df.at[
+                        registros_df.index[indice_seleccionado], 'Estándares'] = nueva_fecha_estandares_str
+                    
+                    # Actualizar campos de estándares que no estén "Completo" a "No aplica"
                     campos_estandares = ['Registro (completo)', 'ET (completo)', 'CO (completo)', 'DD (completo)',
                                          'REC (completo)', 'SERVICIO (completo)']
-                    todos_completos = True
-                    campos_incompletos = []
-
+                    
+                    campos_actualizados = []
                     for campo in campos_estandares:
-                        if campo in registros_df.columns and campo in registros_df.iloc[indice_seleccionado]:
-                            valor = str(registros_df.iloc[indice_seleccionado][campo]).strip()
-                            if valor.upper() != "COMPLETO":
-                                todos_completos = False
-                                campos_incompletos.append(campo)
+                        if campo in registros_df.columns:
+                            valor_actual = str(registros_df.iloc[indice_seleccionado][campo]).strip()
+                            if valor_actual.upper() != "COMPLETO":
+                                registros_df.at[registros_df.index[indice_seleccionado], campo] = "No aplica"
+                                nombre_campo = campo.split(' (')[0]
+                                campos_actualizados.append(nombre_campo)
+                    
+                    if campos_actualizados:
+                        st.info(f"Los siguientes estándares se actualizaron a 'No aplica': {', '.join(campos_actualizados)}")
+                    
+                    edited = True
 
-                    # Si no todos están completos, mostrar advertencia y no permitir el cambio
-                    if not todos_completos:
-                        st.error(
-                            f"No es posible diligenciar este campo. Verifique que todos los estándares se encuentren en estado Completo. Campos pendientes: {', '.join(campos_incompletos)}")
-                        # Mantener el valor original
-                        registros_df.at[registros_df.index[indice_seleccionado], 'Estándares'] = fecha_original
+                    # Guardar cambios inmediatamente
+                    registros_df = validar_reglas_negocio(registros_df)
+                    exito, mensaje = guardar_datos_editados(registros_df)
+                    if exito:
+                        st.success("Fecha de estándares actualizada y guardada correctamente.")
+                        st.session_state.cambios_pendientes = False
+                        st.rerun()  # Recargar la página para mostrar los cambios
                     else:
-                        # Solo actualizar si todos los campos están completos
-                        registros_df.at[
-                            registros_df.index[indice_seleccionado], 'Estándares'] = nueva_fecha_estandares_str
-                        edited = True
-
-                        # Guardar cambios inmediatamente sin más validaciones
-                        exito, mensaje = guardar_datos_editados(registros_df)
-                        if exito:
-                            st.success("Fecha de estándares actualizada y guardada correctamente.")
-                            st.session_state.cambios_pendientes = False
-                            st.rerun()  # Recargar la página para mostrar los cambios
-                        else:
-                            st.error(f"Error al guardar cambios: {mensaje}")
-
-                        # Guardar cambios inmediatamente
-                        registros_df = validar_reglas_negocio(registros_df)
-                        exito, mensaje = guardar_datos_editados(registros_df)
-                        if exito:
-                            st.success("Fecha de estándares actualizada y guardada correctamente.")
-                            st.session_state.cambios_pendientes = False
-                        else:
-                            st.error(f"Error al guardar cambios: {mensaje}")
+                        st.error(f"Error al guardar cambios: {mensaje}")
 
                 elif nueva_fecha_estandares_str != fecha_original:
                     # Si se está borrando la fecha, permitir el cambio
@@ -830,11 +814,6 @@ def mostrar_edicion_registros(registros_df):
                         st.session_state.cambios_pendientes = False
                     else:
                         st.error(f"Error al guardar cambios: {mensaje}")
-
-            # Mostrar advertencia si corresponde
-            if estandares_warning:
-                st.error(
-                    "No se puede diligenciar este campo. Verifique que los estándares se encuentren en estado Completo")
 
             # Sección: Cumplimiento de estándares
             st.markdown("#### Cumplimiento de estándares")
@@ -857,7 +836,7 @@ def mostrar_edicion_registros(registros_df):
 
                 with cols[i % 3]:
                     # Determinar el índice correcto para el valor actual
-                    opciones = ["Sin iniciar", "En proceso", "Completo"]
+                    opciones = ["Sin iniciar", "En proceso", "Completo", "No aplica"]
                     indice_opcion = 0  # Por defecto "Sin iniciar"
 
                     if valor_actual in opciones:
@@ -866,6 +845,8 @@ def mostrar_edicion_registros(registros_df):
                         indice_opcion = 1
                     elif str(valor_actual).lower() == "completo":
                         indice_opcion = 2
+                    elif str(valor_actual).lower() == "no aplica":
+                        indice_opcion = 3
 
                     # Extraer nombre sin el sufijo para mostrar en la interfaz
                     nombre_campo = campo.split(' (')[0]
@@ -898,9 +879,9 @@ def mostrar_edicion_registros(registros_df):
 
             # Explicación sobre los campos de estándares
             st.info("""
-            **Nota sobre los estándares**: Para poder ingresar una fecha en el campo 'Estándares', 
-            todos los campos anteriores deben estar en estado 'Completo'. Esto es un requisito 
-            obligatorio según las reglas de validación del sistema.
+            **Nota sobre los estándares**: Al ingresar una fecha en el campo 'Estándares', 
+            los campos que no estén marcados como 'Completo' se actualizarán automáticamente a 'No aplica'. 
+            Esto permite flexibilidad cuando algunos estándares no son aplicables al registro específico.
             """)
 
             # Validaciones (campos adicionales relacionados con validación)
@@ -1013,45 +994,37 @@ def mostrar_edicion_registros(registros_df):
                 fecha_original = "" if pd.isna(row['Publicación']) else row['Publicación']
 
                 if nueva_fecha_publicacion_str and nueva_fecha_publicacion_str != fecha_original:
-                    # Verificar si Disponer datos temáticos está marcado como Si
-                    disponer_datos_tematicos = False
-                    if 'Disponer datos temáticos' in registros_df.iloc[indice_seleccionado]:
-                        valor = registros_df.iloc[indice_seleccionado]['Disponer datos temáticos']
-                        disponer_datos_tematicos = valor.upper() in ["SI", "SÍ", "YES", "Y"] if pd.notna(
-                            valor) else False
+                    # Actualizar automáticamente "Disponer datos temáticos" a "Si"
+                    if 'Disponer datos temáticos' in registros_df.columns:
+                        registros_df.at[registros_df.index[indice_seleccionado], 'Disponer datos temáticos'] = 'Si'
+                        st.info("Se ha actualizado automáticamente 'Disponer datos temáticos' a 'Si'")
+                    
+                    # Actualizar la fecha de publicación
+                    registros_df.at[
+                        registros_df.index[indice_seleccionado], 'Publicación'] = nueva_fecha_publicacion_str
+                    edited = True
 
-                    # Si no está marcado como Si, mostrar advertencia y no permitir el cambio
-                    if not disponer_datos_tematicos:
-                        st.error(
-                            "No es posible diligenciar este campo. El campo 'Disponer datos temáticos' debe estar marcado como 'Si'")
-                        # No actualizar el valor en el DataFrame
+                    # Recalcular el plazo de oficio de cierre inmediatamente
+                    registros_df = actualizar_plazo_oficio_cierre(registros_df)
+
+                    # Obtener el nuevo plazo calculado
+                    nuevo_plazo_oficio = registros_df.iloc[indice_seleccionado][
+                        'Plazo de oficio de cierre'] if 'Plazo de oficio de cierre' in registros_df.iloc[
+                        indice_seleccionado] else ""
+                    st.info(
+                        f"El plazo de oficio de cierre se ha actualizado automáticamente a: {nuevo_plazo_oficio}")
+
+                    # Guardar cambios inmediatamente
+                    registros_df = validar_reglas_negocio(registros_df)
+                    exito, mensaje = guardar_datos_editados(registros_df)
+                    if exito:
+                        st.success(
+                            "Fecha de publicación actualizada y plazo de oficio de cierre recalculado correctamente.")
+                        st.session_state.cambios_pendientes = False
+                        # Actualizar la tabla completa
+                        st.rerun()
                     else:
-                        # Solo actualizar si cumple la condición
-                        registros_df.at[
-                            registros_df.index[indice_seleccionado], 'Publicación'] = nueva_fecha_publicacion_str
-                        edited = True
-
-                        # Recalcular el plazo de oficio de cierre inmediatamente
-                        registros_df = actualizar_plazo_oficio_cierre(registros_df)
-
-                        # Obtener el nuevo plazo calculado
-                        nuevo_plazo_oficio = registros_df.iloc[indice_seleccionado][
-                            'Plazo de oficio de cierre'] if 'Plazo de oficio de cierre' in registros_df.iloc[
-                            indice_seleccionado] else ""
-                        st.info(
-                            f"El plazo de oficio de cierre se ha actualizado automáticamente a: {nuevo_plazo_oficio}")
-
-                        # Guardar cambios inmediatamente
-                        registros_df = validar_reglas_negocio(registros_df)
-                        exito, mensaje = guardar_datos_editados(registros_df)
-                        if exito:
-                            st.success(
-                                "Fecha de publicación actualizada y plazo de oficio de cierre recalculado correctamente.")
-                            st.session_state.cambios_pendientes = False
-                            # Actualizar la tabla completa
-                            st.rerun()
-                        else:
-                            st.error(f"Error al guardar cambios: {mensaje}")
+                        st.error(f"Error al guardar cambios: {mensaje}")
 
                 elif nueva_fecha_publicacion_str != fecha_original:
                     # Si se está borrando la fecha, permitir el cambio
@@ -1170,35 +1143,32 @@ def mostrar_edicion_registros(registros_df):
 
                         # Si se ha introducido una nueva fecha de oficio de cierre
                         if nueva_fecha_oficio_str and nueva_fecha_oficio_str != fecha_original:
-                            # Validar los requisitos para oficio de cierre
-                            valido, campos_incompletos = verificar_condiciones_oficio_cierre(row)
+                            # Solo validar que la publicación esté completada
+                            tiene_publicacion = (
+                                'Publicación' in row and 
+                                pd.notna(row['Publicación']) and 
+                                row['Publicación'] != ""
+                            )
 
-                            # Si hay campos incompletos, mostrar advertencia y no permitir el cambio
-                            if not valido:
+                            if not tiene_publicacion:
                                 st.error(
-                                    "No es posible diligenciar la Fecha de oficio de cierre. Debe tener todos los campos Si/No en 'Si', todos los estándares completos, y todas las fechas diligenciadas y anteriores a la fecha de cierre.")
-                                # Mostrar los campos incompletos
-                                st.error(f"Campos incompletos: {', '.join(campos_incompletos)}")
-                                # NO actualizar el valor en el DataFrame para evitar validaciones recursivas
+                                    "No es posible diligenciar la Fecha de oficio de cierre. Debe completar primero la etapa de Publicación.")
                             else:
-                                # Solo actualizar si se cumplen todas las condiciones
+                                # Actualizar fecha de oficio de cierre
                                 registros_df.at[registros_df.index[
                                     indice_seleccionado], 'Fecha de oficio de cierre'] = nueva_fecha_oficio_str
 
-                                # Actualizar Estado a "Completado"
+                                # Actualizar Estado a "Completado" automáticamente
                                 registros_df.at[registros_df.index[indice_seleccionado], 'Estado'] = 'Completado'
 
                                 edited = True
-                                # Guardar cambios sin recargar la página inmediatamente
+                                # Guardar cambios
                                 registros_df = validar_reglas_negocio(registros_df)
                                 exito, mensaje = guardar_datos_editados(registros_df)
                                 if exito:
                                     st.success(
-                                        "Fecha de oficio de cierre actualizada y Estado cambiado a 'Completado'.")
+                                        "Fecha de oficio de cierre actualizada. Estado cambiado a 'Completado' y avance al 100%.")
                                     st.session_state.cambios_pendientes = False
-
-                                    # NO usar st.rerun() aquí para evitar la recursión infinita
-                                    # En su lugar, mostrar un botón para refrescar manualmente
                                     st.button("Actualizar vista", key=f"actualizar_oficio_{indice_seleccionado}",
                                               on_click=lambda: st.rerun())
                                 else:
@@ -1217,15 +1187,12 @@ def mostrar_edicion_registros(registros_df):
                                     "El estado ha sido cambiado a 'En proceso' porque se eliminó la fecha de oficio de cierre.")
 
                             edited = True
-                            # Guardar cambios sin recargar la página inmediatamente
+                            # Guardar cambios
                             registros_df = validar_reglas_negocio(registros_df)
                             exito, mensaje = guardar_datos_editados(registros_df)
                             if exito:
                                 st.success("Fecha de oficio de cierre actualizada correctamente.")
                                 st.session_state.cambios_pendientes = False
-
-                                # NO usar st.rerun() aquí para evitar la recursión infinita
-                                # En su lugar, mostrar un botón para refrescar manualmente
                                 st.button("Actualizar vista", key=f"actualizar_oficio_borrar_{indice_seleccionado}",
                                           on_click=lambda: st.rerun())
                             else:
@@ -2223,12 +2190,12 @@ def mostrar_reportes(registros_df, tipo_dato_filtro, acuerdo_filtro, analisis_fi
     
     # Filtro por análisis y cronograma
     if analisis_filtro != 'Todos':
-        if analisis_filtro == 'Con Fecha Real':
+        if analisis_filtro == 'Completado':
             df_filtrado = df_filtrado[
                 (df_filtrado['Análisis y cronograma'].notna()) & 
                 (df_filtrado['Análisis y cronograma'] != '')
             ]
-        else:  # Sin Fecha Real
+        else:  # No Completado
             df_filtrado = df_filtrado[
                 (df_filtrado['Análisis y cronograma'].isna()) | 
                 (df_filtrado['Análisis y cronograma'] == '')
@@ -2236,12 +2203,12 @@ def mostrar_reportes(registros_df, tipo_dato_filtro, acuerdo_filtro, analisis_fi
     
     # Filtro por estándares completado
     if estandares_filtro != 'Todos':
-        if estandares_filtro == 'Con Fecha':
+        if estandares_filtro == 'Completado':
             df_filtrado = df_filtrado[
                 (df_filtrado['Estándares'].notna()) & 
                 (df_filtrado['Estándares'] != '')
             ]
-        else:  # Sin Fecha
+        else:  # No Completado
             df_filtrado = df_filtrado[
                 (df_filtrado['Estándares'].isna()) | 
                 (df_filtrado['Estándares'] == '')
@@ -2249,12 +2216,12 @@ def mostrar_reportes(registros_df, tipo_dato_filtro, acuerdo_filtro, analisis_fi
     
     # Filtro por publicación
     if publicacion_filtro != 'Todos':
-        if publicacion_filtro == 'Con Fecha':
+        if publicacion_filtro == 'Completado':
             df_filtrado = df_filtrado[
                 (df_filtrado['Publicación'].notna()) & 
                 (df_filtrado['Publicación'] != '')
             ]
-        else:  # Sin Fecha
+        else:  # No Completado
             df_filtrado = df_filtrado[
                 (df_filtrado['Publicación'].isna()) | 
                 (df_filtrado['Publicación'] == '')
@@ -2452,6 +2419,55 @@ def mostrar_error(error):
     """)
 
 
+# Función actualizada para calcular porcentaje de avance (considera "No aplica" como válido)
+def calcular_porcentaje_avance_actualizado(registro):
+    """
+    Calcula el porcentaje de avance de un registro basado en los campos de completitud.
+    Considera "No aplica" como un estado válido (equivalente a "Completo").
+
+    Ponderación:
+    - Acuerdo de compromiso: 20%
+    - Análisis y cronograma (fecha real): 20%
+    - Estándares (fecha real): 30%
+    - Publicación (fecha real): 25%
+    - Fecha de oficio de cierre: 5%
+    """
+    try:
+        # Inicializar el avance
+        avance = 0
+
+        # Verificar el acuerdo de compromiso (20%)
+        if 'Acuerdo de compromiso' in registro and str(registro['Acuerdo de compromiso']).strip().upper() in ['SI',
+                                                                                                              'SÍ', 'S',
+                                                                                                              'YES',
+                                                                                                              'Y',
+                                                                                                              'COMPLETO']:
+            avance += 20
+
+        # Verificar análisis y cronograma - basado solo en la fecha (20%)
+        if 'Análisis y cronograma' in registro and registro['Análisis y cronograma'] and pd.notna(
+                registro['Análisis y cronograma']):
+            avance += 20
+
+        # Verificar estándares - basado en la fecha (30%)
+        if 'Estándares' in registro and registro['Estándares'] and pd.notna(registro['Estándares']):
+            avance += 30
+
+        # Verificar publicación - basado en la fecha (25%)
+        if 'Publicación' in registro and registro['Publicación'] and pd.notna(registro['Publicación']):
+            avance += 25
+
+        # Verificar fecha de oficio de cierre (5%)
+        if 'Fecha de oficio de cierre' in registro and registro['Fecha de oficio de cierre'] and pd.notna(
+                registro['Fecha de oficio de cierre']):
+            avance += 5
+
+        return avance
+    except Exception as e:
+        # En caso de error, retornar 0
+        return 0
+
+
 def main():
     try:
         # Inicializar estado de sesión para registro de cambios
@@ -2550,10 +2566,10 @@ def main():
             Se aplican las siguientes reglas de validación:
             1. Si 'Entrega acuerdo de compromiso' no está vacío, 'Acuerdo de compromiso' se actualiza a 'SI'
             2. Si 'Análisis y cronograma' tiene fecha, 'Análisis de información' se actualiza a 'SI'
-            3. Si se introduce fecha en 'Estándares', se verifica que los campos con sufijo (completo) estén 'Completo'
-            4. Si se introduce fecha en 'Publicación', se verifica que 'Disponer datos temáticos' sea 'SI'
-            5. Para introducir una fecha en 'Fecha de oficio de cierre', todos los campos Si/No deben estar marcados como 'Si', todos los estándares deben estar 'Completo' y todas las fechas diligenciadas.
-            6. Al introducir una fecha en 'Fecha de oficio de cierre', el campo 'Estado' se actualizará automáticamente a 'Completado'.
+            3. Al introducir fecha en 'Estándares', los campos que no estén 'Completo' se actualizan automáticamente a 'No aplica'
+            4. Si se introduce fecha en 'Publicación', 'Disponer datos temáticos' se actualiza automáticamente a 'SI'
+            5. Para introducir una fecha en 'Fecha de oficio de cierre', debe tener la etapa de Publicación completada
+            6. Al introducir una fecha en 'Fecha de oficio de cierre', el campo 'Estado' se actualiza automáticamente a 'Completado' y el avance al 100%
             """)
             mostrar_estado_validaciones(registros_df, st)
 
@@ -2582,7 +2598,7 @@ def main():
             registros_df[columna] = registros_df[columna].astype(str)
 
         # Agregar columna de porcentaje de avance
-        registros_df['Porcentaje Avance'] = registros_df.apply(calcular_porcentaje_avance, axis=1)
+        registros_df['Porcentaje Avance'] = registros_df.apply(calcular_porcentaje_avance_actualizado, axis=1)
 
         # Agregar columna de estado de fechas
         registros_df['Estado Fechas'] = registros_df.apply(verificar_estado_fechas, axis=1)
