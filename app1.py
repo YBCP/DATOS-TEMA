@@ -23,6 +23,43 @@ from data_utils import (
 from visualization import crear_gantt, comparar_avance_metas
 from constants import REGISTROS_DATA, META_DATA
 
+# Función auxiliar para guardar datos de forma consistente
+def guardar_datos_con_validacion(registros_df, mensaje_exito="Datos guardados correctamente", mostrar_mensaje=True):
+    """
+    Función auxiliar que garantiza el guardado de datos con validaciones completas.
+    Aplica todas las reglas de negocio y actualiza plazos antes de guardar.
+    """
+    try:
+        # Aplicar validaciones de reglas de negocio
+        registros_df = validar_reglas_negocio(registros_df)
+        
+        # Actualizar todos los plazos automáticamente
+        registros_df = actualizar_plazo_analisis(registros_df)
+        registros_df = actualizar_plazo_cronograma(registros_df)
+        registros_df = actualizar_plazo_oficio_cierre(registros_df)
+        
+        # Recalcular porcentajes y estados
+        registros_df['Porcentaje Avance'] = registros_df.apply(calcular_porcentaje_avance, axis=1)
+        registros_df['Estado Fechas'] = registros_df.apply(verificar_estado_fechas, axis=1)
+        
+        # Guardar en archivo CSV
+        exito, mensaje = guardar_datos_editados(registros_df)
+        
+        if exito:
+            if mostrar_mensaje:
+                st.success(f"✅ {mensaje_exito}")
+            return True, registros_df
+        else:
+            if mostrar_mensaje:
+                st.error(f"❌ Error al guardar: {mensaje}")
+            return False, registros_df
+            
+    except Exception as e:
+        if mostrar_mensaje:
+            st.error(f"❌ Error crítico al guardar datos: {str(e)}")
+        return False, registros_df
+
+
 # Función para convertir fecha string a datetime
 def string_a_fecha(fecha_str):
     """Convierte un string de fecha a objeto datetime para mostrar en el selector de fecha."""
@@ -2243,6 +2280,8 @@ def main():
         exito, mensaje = guardar_datos_editados(registros_df)
         if not exito:
             st.warning(f"No se pudieron guardar los plazos actualizados: {mensaje}")
+        else:
+            st.info("✅ Plazos automáticos actualizados y guardados correctamente.")
 
         # Verificar si los DataFrames están vacíos o no tienen registros
         if registros_df.empty:
