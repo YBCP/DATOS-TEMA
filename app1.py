@@ -550,7 +550,7 @@ def mostrar_edicion_registros(registros_df):
 
             # Gestión acceso a datos (como primer campo de esta sección)
             if 'Gestion acceso a los datos y documentos requeridos ' in row:
-                                    gestion_acceso = st.selectbox(
+                gestion_acceso = st.selectbox(
                     "Gestión acceso a los datos",
                     options=["", "Si", "No"],
                     index=1 if row['Gestion acceso a los datos y documentos requeridos '].upper() in ["SI", "SÍ",
