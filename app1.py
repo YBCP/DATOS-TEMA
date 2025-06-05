@@ -23,6 +23,208 @@ from data_utils import (
 from visualization import crear_gantt, comparar_avance_metas
 from constants import REGISTROS_DATA, META_DATA
 
+# ===== FUNCIONES DE AUTENTICACIÓN =====
+def verificar_admin():
+    """
+    Verifica si el usuario está autenticado como administrador.
+    Retorna True si está autenticado, False si no.
+    """
+    # Inicializar estado de autenticación si no existe
+    if 'admin_authenticated' not in st.session_state:
+        st.session_state.admin_authenticated = False
+    
+    return st.session_state.admin_authenticated
+
+
+def mostrar_login_admin():
+    """
+    Muestra el formulario de login para admin y maneja la autenticación.
+    """
+    st.sidebar.markdown("**🔐 Acceso Administrador**")
+    st.sidebar.markdown("*Requerido para gestión de datos*")
+    
+    # Formulario de contraseña
+    password = st.sidebar.text_input(
+        "Contraseña de administrador:",
+        type="password",
+        key="admin_password",
+        help="Ingrese la contraseña de administrador"
+    )
+    
+    if st.sidebar.button("🔓 Acceder", key="login_btn", use_container_width=True):
+        if password == "qwerty":
+            st.session_state.admin_authenticated = True
+            st.sidebar.success("✅ Acceso concedido")
+            st.rerun()
+        else:
+            st.sidebar.error("❌ Contraseña incorrecta")
+
+
+def mostrar_gestion_datos_admin(registros_df):
+    """
+    Muestra la sección de gestión de datos Excel solo para administradores autenticados.
+    """
+    st.sidebar.markdown("**📊 Gestión de Datos - ADMIN**")
+    st.sidebar.success("🔓 Acceso autorizado")
+    
+    # Descargar template Excel
+    st.sidebar.markdown("**📥 Descargar Template**")
+    
+    # Crear archivo Excel con todos los datos actuales como template
+    output_template = io.BytesIO()
+    with pd.ExcelWriter(output_template, engine='openpyxl') as writer:
+        # Hoja principal con todos los registros
+        registros_df.to_excel(writer, sheet_name='Registros', index=False)
+        
+        # Hoja con ejemplo de estructura (solo las primeras 3 filas como ejemplo)
+        if len(registros_df) > 0:
+            ejemplo_df = registros_df.head(3).copy()
+            # Limpiar las fechas del ejemplo para que sea un template limpio
+            columnas_fecha = [
+                'Suscripción acuerdo de compromiso', 'Entrega acuerdo de compromiso',
+                'Fecha de entrega de información', 'Plazo de análisis', 'Plazo de cronograma',
+                'Análisis y cronograma', 'Estándares (fecha programada)', 'Estándares',
+                'Fecha de publicación programada', 'Publicación',
+                'Plazo de oficio de cierre', 'Fecha de oficio de cierre'
+            ]
+            for col in columnas_fecha:
+                if col in ejemplo_df.columns:
+                    ejemplo_df[col] = ""
+            
+            ejemplo_df.to_excel(writer, sheet_name='Template_Ejemplo', index=False)
+        
+        # Hoja de instrucciones
+        instrucciones = pd.DataFrame({
+            'INSTRUCCIONES PARA USO DEL TEMPLATE': [
+                '1. Use la hoja "Registros" para editar todos los datos',
+                '2. NO modifique la estructura de columnas',
+                '3. Fechas deben estar en formato DD/MM/AAAA',
+                '4. Campos Si/No: use "Si" o "No" exactamente',
+                '5. Estándares (completo): use "Sin iniciar", "En proceso" o "Completo"',
+                '6. NO modifique la columna "Cod" (código único)',
+                '7. Guarde el archivo y súbalo usando el botón "Cargar Datos"',
+                '',
+                'CAMPOS CALCULADOS AUTOMÁTICAMENTE:',
+                '- Plazo de análisis (5 días hábiles después de entrega info)',
+                '- Plazo de cronograma (3 días hábiles después de plazo análisis)',
+                '- Plazo de oficio de cierre (7 días hábiles después de publicación)',
+                '',
+                'VALIDACIONES AUTOMÁTICAS:',
+                '- Acuerdo compromiso = Si (si hay fecha entrega acuerdo)',
+                '- Análisis información = Si (si hay fecha análisis)',
+                '- Estado = Completado (si hay fecha oficio cierre)',
+                '- Las fechas de estándares requieren todos los campos "completo"',
+                '- Las fechas de publicación requieren "Disponer datos" = Si'
+            ]
+        })
+        instrucciones.to_excel(writer, sheet_name='INSTRUCCIONES', index=False)
+
+    excel_template_data = output_template.getvalue()
+    
+    st.sidebar.download_button(
+        label="📊 Descargar Template Excel",
+        data=excel_template_data,
+        file_name=f"template_cronogramas_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help="Descarga todos los datos actuales en formato Excel para edición",
+        use_container_width=True
+    )
+    
+    # Cargar datos desde Excel
+    st.sidebar.markdown("**📤 Cargar Datos Editados**")
+    
+    uploaded_file = st.sidebar.file_uploader(
+        "Seleccionar archivo Excel editado",
+        type=['xlsx', 'xls'],
+        help="Suba el archivo Excel con los datos editados"
+    )
+    
+    if uploaded_file is not None:
+        try:
+            # Leer el archivo Excel cargado
+            df_cargado = pd.read_excel(uploaded_file, sheet_name='Registros')
+            
+            # Mostrar información del archivo cargado
+            st.sidebar.success(f"✅ Archivo cargado: {len(df_cargado)} registros")
+            
+            # Botón para confirmar la actualización
+            if st.sidebar.button("🔄 Actualizar Datos", type="primary", use_container_width=True):
+                try:
+                    # Validar que el archivo tenga las columnas necesarias
+                    columnas_requeridas = ['Cod', 'Entidad', 'TipoDato', 'Nivel Información ']
+                    columnas_faltantes = [col for col in columnas_requeridas if col not in df_cargado.columns]
+                    
+                    if columnas_faltantes:
+                        st.sidebar.error(f"❌ Columnas faltantes: {', '.join(columnas_faltantes)}")
+                    else:
+                        # Usar la función auxiliar para guardar con todas las validaciones
+                        exito, df_cargado = guardar_datos_con_validacion(
+                            df_cargado, 
+                            "Datos cargados desde Excel y guardados correctamente", 
+                            False
+                        )
+                        
+                        if exito:
+                            st.sidebar.success("✅ Datos actualizados correctamente desde Excel")
+                            st.sidebar.info("🔄 Recargue la página para ver los cambios")
+                            
+                            # Opción para recargar automáticamente
+                            if st.sidebar.button("🔄 Recargar Aplicación", use_container_width=True):
+                                st.rerun()
+                        else:
+                            st.sidebar.error("❌ Error al guardar los datos cargados")
+                            
+                except Exception as e:
+                    st.sidebar.error(f"❌ Error al procesar archivo: {str(e)}")
+                    
+        except Exception as e:
+            st.sidebar.error(f"❌ Error al leer archivo: {str(e)}")
+            st.sidebar.info("Verifique que el archivo tenga la hoja 'Registros' y esté bien formateado")
+    
+    # Botón para cerrar sesión de admin
+    if st.sidebar.button("🚪 Cerrar Sesión Admin", use_container_width=True):
+        st.session_state.admin_authenticated = False
+        st.sidebar.success("✅ Sesión de administrador cerrada")
+        st.rerun()
+
+
+# ===== FUNCIONES AUXILIARES =====
+def guardar_datos_con_validacion(registros_df, mensaje_exito="Datos guardados correctamente", mostrar_mensaje=True):
+    """
+    Función auxiliar que garantiza el guardado de datos con validaciones completas.
+    Aplica todas las reglas de negocio y actualiza plazos antes de guardar.
+    """
+    try:
+        # Aplicar validaciones de reglas de negocio
+        registros_df = validar_reglas_negocio(registros_df)
+        
+        # Actualizar todos los plazos automáticamente
+        registros_df = actualizar_plazo_analisis(registros_df)
+        registros_df = actualizar_plazo_cronograma(registros_df)
+        registros_df = actualizar_plazo_oficio_cierre(registros_df)
+        
+        # Recalcular porcentajes y estados
+        registros_df['Porcentaje Avance'] = registros_df.apply(calcular_porcentaje_avance, axis=1)
+        registros_df['Estado Fechas'] = registros_df.apply(verificar_estado_fechas, axis=1)
+        
+        # Guardar en archivo CSV
+        exito, mensaje = guardar_datos_editados(registros_df)
+        
+        if exito:
+            if mostrar_mensaje:
+                st.success(f"✅ {mensaje_exito}")
+            return True, registros_df
+        else:
+            if mostrar_mensaje:
+                st.error(f"❌ Error al guardar: {mensaje}")
+            return False, registros_df
+            
+    except Exception as e:
+        if mostrar_mensaje:
+            st.error(f"❌ Error crítico al guardar datos: {str(e)}")
+        return False, registros_df
+
+
 # Función auxiliar para guardar datos de forma consistente
 def guardar_datos_con_validacion(registros_df, mensaje_exito="Datos guardados correctamente", mostrar_mensaje=True):
     """
