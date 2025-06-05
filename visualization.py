@@ -242,34 +242,35 @@ def comparar_avance_metas(df, metas_nuevas_df, metas_actualizar_df):
         registros_nuevos = df[df['TipoDato'].str.upper() == 'NUEVO']
         registros_actualizar = df[df['TipoDato'].str.upper() == 'ACTUALIZAR']
 
-        # Para registros nuevos
-        # Asegurar que la columna 'Acuerdo de compromiso' existe y no es NaN
-        if 'Acuerdo de compromiso' not in df.columns:
-            df['Acuerdo de compromiso'] = ''
-        df['Acuerdo de compromiso'] = df['Acuerdo de compromiso'].fillna('').astype(str)
-        
+        # Función auxiliar para contar registros con fecha válida
+        def contar_con_fecha_valida(registros_filtrados, columna):
+            if columna not in registros_filtrados.columns:
+                return 0
+            return len(registros_filtrados[
+                (registros_filtrados[columna].notna()) & 
+                (registros_filtrados[columna].astype(str).str.strip() != '')
+            ])
+
+        # Para registros nuevos - contar directamente las fechas reales
         completados_nuevos = {
-            'Acuerdo de compromiso': len(registros_nuevos[registros_nuevos['Acuerdo de compromiso'].str.upper().isin(
-                ['SI', 'SÍ', 'S', 'YES', 'Y', 'COMPLETO'])]),
-            'Análisis y cronograma': contar_registros_completados_por_fecha(
-                registros_nuevos, 'Análisis y cronograma (fecha programada)', 'Análisis y cronograma'),
-            'Estándares': contar_registros_completados_por_fecha(
-                registros_nuevos, 'Estándares (fecha programada)', 'Estándares'),
-            'Publicación': contar_registros_completados_por_fecha(
-                registros_nuevos, 'Fecha de publicación programada', 'Publicación')
+            'Acuerdo de compromiso': len(registros_nuevos[
+                registros_nuevos['Acuerdo de compromiso'].astype(str).str.upper().isin(
+                    ['SI', 'SÍ', 'S', 'YES', 'Y', 'COMPLETO'])
+            ]) if 'Acuerdo de compromiso' in registros_nuevos.columns else 0,
+            'Análisis y cronograma': contar_con_fecha_valida(registros_nuevos, 'Análisis y cronograma'),
+            'Estándares': contar_con_fecha_valida(registros_nuevos, 'Estándares'),
+            'Publicación': contar_con_fecha_valida(registros_nuevos, 'Publicación')
         }
 
-        # Para registros a actualizar
+        # Para registros a actualizar - contar directamente las fechas reales
         completados_actualizar = {
             'Acuerdo de compromiso': len(registros_actualizar[
-                                             registros_actualizar['Acuerdo de compromiso'].str.upper().isin(
-                                                 ['SI', 'SÍ', 'S', 'YES', 'Y', 'COMPLETO'])]),
-            'Análisis y cronograma': contar_registros_completados_por_fecha(
-                registros_actualizar, 'Análisis y cronograma (fecha programada)', 'Análisis y cronograma'),
-            'Estándares': contar_registros_completados_por_fecha(
-                registros_actualizar, 'Estándares (fecha programada)', 'Estándares'),
-            'Publicación': contar_registros_completados_por_fecha(
-                registros_actualizar, 'Fecha de publicación programada', 'Publicación')
+                registros_actualizar['Acuerdo de compromiso'].astype(str).str.upper().isin(
+                    ['SI', 'SÍ', 'S', 'YES', 'Y', 'COMPLETO'])
+            ]) if 'Acuerdo de compromiso' in registros_actualizar.columns else 0,
+            'Análisis y cronograma': contar_con_fecha_valida(registros_actualizar, 'Análisis y cronograma'),
+            'Estándares': contar_con_fecha_valida(registros_actualizar, 'Estándares'),
+            'Publicación': contar_con_fecha_valida(registros_actualizar, 'Publicación')
         }
 
         # Crear dataframes para la comparación
