@@ -90,11 +90,38 @@ def mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registr
     st.markdown('<div class="subtitle">Comparación con Metas Quincenales</div>', unsafe_allow_html=True)
 
     # Calcular comparación con metas
-    comparacion_nuevos, comparacion_actualizar, fecha_meta = comparar_avance_metas(df_filtrado, metas_nuevas_df,
+    comparacion_nuevos, comparacion_actualizar, fecha_meta = comparar_avance_metas_corregido(df_filtrado, metas_nuevas_df,
                                                                                    metas_actualizar_df)
 
     # Mostrar fecha de la meta
     st.markdown(f"**Meta más cercana a la fecha actual: {fecha_meta.strftime('%d/%m/%Y')}**")
+    
+    # Debug: Mostrar información de conteo para verificación
+    if st.checkbox("Mostrar información de conteo (debug)", value=False):
+        st.markdown("#### Debug - Conteos por Tipo de Dato:")
+        
+        # Información de registros nuevos
+        registros_nuevos_debug = df_filtrado[df_filtrado['TipoDato'].str.upper() == 'NUEVO']
+        st.markdown(f"**Registros Nuevos Total:** {len(registros_nuevos_debug)}")
+        
+        nuevos_acuerdo = contar_acuerdo_compromiso_completado(registros_nuevos_debug)
+        nuevos_analisis = contar_fecha_completada(registros_nuevos_debug, 'Análisis y cronograma')
+        nuevos_estandares = contar_fecha_completada(registros_nuevos_debug, 'Estándares')
+        nuevos_publicacion = contar_fecha_completada(registros_nuevos_debug, 'Publicación')
+        
+        st.markdown(f"- Acuerdo: {nuevos_acuerdo}, Análisis: {nuevos_analisis}, Estándares: {nuevos_estandares}, Publicación: {nuevos_publicacion}")
+        
+        # Información de registros a actualizar
+        registros_actualizar_debug = df_filtrado[df_filtrado['TipoDato'].str.upper() == 'ACTUALIZAR']
+        st.markdown(f"**Registros a Actualizar Total:** {len(registros_actualizar_debug)}")
+        
+        actualizar_acuerdo = contar_acuerdo_compromiso_completado(registros_actualizar_debug)
+        actualizar_analisis = contar_fecha_completada(registros_actualizar_debug, 'Análisis y cronograma')
+        actualizar_estandares = contar_fecha_completada(registros_actualizar_debug, 'Estándares')
+        actualizar_publicacion = contar_fecha_completada(registros_actualizar_debug, 'Publicación')
+        
+        st.markdown(f"- Acuerdo: {actualizar_acuerdo}, Análisis: {actualizar_analisis}, Estándares: {actualizar_estandares}, Publicación: {actualizar_publicacion}")
+
 
     # Mostrar comparación en dos columnas
     col1, col2 = st.columns(2)
@@ -305,8 +332,8 @@ def mostrar_edicion_registros(registros_df):
         3. Al introducir fecha en 'Estándares', los campos que no estén 'Completo' se actualizarán automáticamente a 'No aplica'
         4. Si introduce fecha en 'Publicación', 'Disponer datos temáticos' se actualizará automáticamente a 'SI'
         5. Para introducir una fecha en 'Fecha de oficio de cierre', debe tener la etapa de Publicación completada (con fecha)
-        6. Al introducir una fecha en 'Fecha de oficio de cierre', el campo 'Estado' se actualizará automáticamente a 'Completado'
-        7. Si se elimina la fecha de oficio de cierre, el Estado se cambiará automáticamente a 'En proceso'
+        6. Al introducir una fecha en 'Fecha de oficio de cierre', el campo 'Estado' se actualizará automáticamente a 'Completado' y el porcentaje de avance será automáticamente 100%
+        7. Si se elimina la fecha de oficio de cierre, el Estado se cambiará automáticamente a 'En proceso' y el porcentaje se recalculará según las etapas completadas
     """)
     # Mostrar mensaje de guardado si existe
     if st.session_state.mensaje_guardado:
@@ -1163,7 +1190,7 @@ def mostrar_edicion_registros(registros_df):
                                 exito, mensaje = guardar_datos_editados(registros_df)
                                 if exito:
                                     st.success(
-                                        "Fecha de oficio de cierre actualizada. Estado cambiado a 'Completado' y avance al 100%.")
+                                        "Fecha de oficio de cierre actualizada. Estado: 'Completado', Avance: 100%.")
                                     st.session_state.cambios_pendientes = False
                                     st.button("Actualizar vista", key=f"actualizar_oficio_{indice_seleccionado}",
                                               on_click=lambda: st.rerun())
@@ -1181,6 +1208,9 @@ def mostrar_edicion_registros(registros_df):
                                 registros_df.at[registros_df.index[indice_seleccionado], 'Estado'] = 'En proceso'
                                 st.info(
                                     "El estado ha sido cambiado a 'En proceso' porque se eliminó la fecha de oficio de cierre.")
+
+                            # Recalcular el porcentaje de avance (ya no será 100% automáticamente)
+                            registros_df.at[registros_df.index[indice_seleccionado], 'Porcentaje Avance'] = calcular_porcentaje_avance(registros_df.iloc[indice_seleccionado])
 
                             edited = True
                             # Guardar cambios
@@ -2516,7 +2546,8 @@ def main():
             3. Al introducir fecha en 'Estándares', los campos que no estén 'Completo' se actualizan automáticamente a 'No aplica'
             4. Si se introduce fecha en 'Publicación', 'Disponer datos temáticos' se actualiza automáticamente a 'SI'
             5. Para introducir una fecha en 'Fecha de oficio de cierre', debe tener la etapa de Publicación completada
-            6. Al introducir una fecha en 'Fecha de oficio de cierre', el campo 'Estado' se actualiza automáticamente a 'Completado' y el avance al 100%
+            6. Al introducir una fecha en 'Fecha de oficio de cierre', el campo 'Estado' se actualiza automáticamente a 'Completado' y el porcentaje de avance será 100%
+            7. Cualquier registro con fecha de oficio de cierre tendrá automáticamente 100% de avance, independientemente del estado de otras etapas
             """)
             mostrar_estado_validaciones(registros_df, st)
 
