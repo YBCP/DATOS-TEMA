@@ -43,7 +43,38 @@ def highlight_estado_fechas(s):
         return ['background-color: #ffffff'] * len(s)
 
 
-def mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registros_df):
+# Función para crear template de Excel
+def crear_template_excel():
+    """Crea un template de Excel con las columnas requeridas."""
+    columnas_template = [
+        'Cod', 'Funcionario', 'Entidad', 'Nivel Información ', 'Frecuencia actualizacion ', 'TipoDato',
+        'Actas de acercamiento y manifestación de interés', 'Suscripción acuerdo de compromiso',
+        'Entrega acuerdo de compromiso', 'Acuerdo de compromiso', 'Gestion acceso a los datos y documentos requeridos ',
+        'Análisis de información', 'Cronograma Concertado', 'Análisis y cronograma (fecha programada)',
+        'Fecha de entrega de información', 'Plazo de análisis', 'Análisis y cronograma', 'Seguimiento a los acuerdos',
+        'Registro', 'ET', 'CO', 'DD', 'REC', 'SERVICIO', 'Estándares (fecha programada)', 'Estándares',
+        'Resultados de orientación técnica', 'Verificación del servicio web geográfico', 'Verificar Aprobar Resultados',
+        'Revisar y validar los datos cargados en la base de datos', 'Aprobación resultados obtenidos en la rientación',
+        'Disponer datos temáticos', 'Fecha de publicación programada', 'Publicación',
+        'Catálogo de recursos geográficos', 'Oficios de cierre', 'Fecha de oficio de cierre', 'Estado', 'Observación'
+    ]
+    
+    # Crear DataFrame vacío con las columnas
+    df_template = pd.DataFrame(columns=columnas_template)
+    
+    # Agregar una fila de ejemplo con instrucciones
+    df_template.loc[0] = ['1', 'Nombre del Funcionario', 'Nombre de la Entidad', 'Nombre del Nivel de Información', 
+                         'Anual', 'Nuevo', 'Si', 'DD/MM/AAAA', 'DD/MM/AAAA', 'Si', 'Si', 'Si', 'Si', 'DD/MM/AAAA',
+                         'DD/MM/AAAA', 'DD/MM/AAAA', 'DD/MM/AAAA', 'Si', 'Completo', 'Completo', 'Completo', 
+                         'Completo', 'Completo', 'Completo', 'DD/MM/AAAA', 'DD/MM/AAAA', 'Si', 'Si', 'Si', 'Si', 
+                         'Si', 'Si', 'DD/MM/AAAA', 'DD/MM/AAAA', 'Si', 'Si', 'DD/MM/AAAA', 'En proceso', 
+                         'Observaciones adicionales']
+    
+    return df_template
+
+
+def mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registros_df, 
+                     entidad_seleccionada, funcionario_seleccionado, nivel_seleccionado):
     """Muestra el dashboard principal con métricas y gráficos."""
     # Mostrar métricas generales
     st.markdown('<div class="subtitle">Métricas Generales</div>', unsafe_allow_html=True)
@@ -101,9 +132,38 @@ def mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registr
 
     with col1:
         st.markdown("### Registros Nuevos")
-        st.dataframe(comparacion_nuevos.style.format({
-            'Porcentaje': '{:.2f}%'
-        }).background_gradient(cmap='RdYlGn', subset=['Porcentaje']))
+        
+        # MODIFICACIÓN: Cambiar gradiente de colores para que vaya de 0 a 100, rojo a verde oscuro
+        def aplicar_gradiente_personalizado(df, columna_porcentaje):
+            """Aplica gradiente personalizado de rojo a verde oscuro para valores 0-100%"""
+            def color_porcentaje(val):
+                if pd.isna(val):
+                    return 'background-color: white'
+                
+                # Limitar el valor entre 0 y 100 para el gradiente
+                val_limitado = max(0, min(100, val))
+                
+                # Calcular el color del gradiente (rojo a verde oscuro)
+                if val_limitado <= 50:
+                    # De rojo a amarillo (0-50%)
+                    r = 255
+                    g = int(255 * (val_limitado / 50))
+                    b = 0
+                else:
+                    # De amarillo a verde oscuro (50-100%)
+                    r = int(255 * (1 - (val_limitado - 50) / 50))
+                    g = int(255 * (0.7 + 0.3 * (1 - (val_limitado - 50) / 50)))  # Verde más oscuro
+                    b = 0
+                
+                # Para valores mayores a 100%, usar verde oscuro fijo
+                if val > 100:
+                    r, g, b = 0, 100, 0  # Verde oscuro
+                
+                return f'background-color: rgb({r}, {g}, {b})'
+            
+            return df.style.format({columna_porcentaje: '{:.2f}%'}).applymap(color_porcentaje, subset=[columna_porcentaje])
+        
+        st.dataframe(aplicar_gradiente_personalizado(comparacion_nuevos, 'Porcentaje'))
 
         # Gráfico de barras para registros nuevos
         fig_nuevos = px.bar(
@@ -119,9 +179,7 @@ def mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registr
 
     with col2:
         st.markdown("### Registros a Actualizar")
-        st.dataframe(comparacion_actualizar.style.format({
-            'Porcentaje': '{:.2f}%'
-        }).background_gradient(cmap='RdYlGn', subset=['Porcentaje']))
+        st.dataframe(aplicar_gradiente_personalizado(comparacion_actualizar, 'Porcentaje'))
 
         # Gráfico de barras para registros a actualizar
         fig_actualizar = px.bar(
@@ -135,16 +193,24 @@ def mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registr
         )
         st.plotly_chart(fig_actualizar, use_container_width=True)
 
-    # Diagrama de Gantt - Cronograma de Hitos por Nivel de Información
-    st.markdown('<div class="subtitle">Diagrama de Gantt - Cronograma de Hitos por Nivel de Información</div>',
-                unsafe_allow_html=True)
+    # MODIFICACIÓN: Diagrama de Gantt condicionado - solo se muestra cuando hay filtros aplicados
+    mostrar_gantt = (entidad_seleccionada != 'Todas' or 
+                     funcionario_seleccionado != 'Todos' or 
+                     nivel_seleccionado != 'Todos')
 
-    # Crear el diagrama de Gantt
-    fig_gantt = crear_gantt(df_filtrado)
-    if fig_gantt is not None:
-        st.plotly_chart(fig_gantt, use_container_width=True)
+    if mostrar_gantt:
+        # Diagrama de Gantt - Cronograma de Hitos por Nivel de Información
+        st.markdown('<div class="subtitle">Diagrama de Gantt - Cronograma de Hitos por Nivel de Información</div>',
+                    unsafe_allow_html=True)
+
+        # Crear el diagrama de Gantt
+        fig_gantt = crear_gantt(df_filtrado)
+        if fig_gantt is not None:
+            st.plotly_chart(fig_gantt, use_container_width=True)
+        else:
+            st.warning("No hay datos suficientes para crear el diagrama de Gantt con los filtros aplicados.")
     else:
-        st.warning("No hay datos suficientes para crear el diagrama de Gantt.")
+        st.info("💡 **Diagrama de Gantt**: Seleccione un filtro específico (Entidad, Funcionario o Nivel de Información) para visualizar el cronograma detallado.")
 
     # Tabla de registros con porcentaje de avance
     st.markdown('<div class="subtitle">Detalle de Registros</div>', unsafe_allow_html=True)
@@ -2438,6 +2504,53 @@ def main():
         st.markdown('<div class="title">📊 Tablero de Control de Seguimiento de Cronogramas</div>',
                     unsafe_allow_html=True)
 
+        # MODIFICACIÓN: Panel lateral con opciones de descarga y carga
+        st.sidebar.markdown('<div class="subtitle">📁 Gestión de Datos</div>', unsafe_allow_html=True)
+        
+        # Crear template de Excel
+        with st.sidebar:
+            st.markdown("#### Descargar Template")
+            template_df = crear_template_excel()
+            
+            # Crear archivo Excel para descarga
+            output_template = io.BytesIO()
+            with pd.ExcelWriter(output_template, engine='openpyxl') as writer:
+                template_df.to_excel(writer, sheet_name='Template', index=False)
+            
+            template_data = output_template.getvalue()
+            
+            st.download_button(
+                label="📋 Descargar Template Excel",
+                data=template_data,
+                file_name="template_cronogramas.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                help="Descarga una plantilla de Excel con las columnas requeridas y un ejemplo"
+            )
+            
+            st.markdown("#### Cargar Datos")
+            archivo_cargado = st.file_uploader(
+                "Subir archivo Excel",
+                type=['xlsx', 'xls'],
+                help="Suba un archivo Excel con los datos de registros"
+            )
+            
+            if archivo_cargado is not None:
+                try:
+                    # Leer el archivo Excel subido
+                    df_cargado = pd.read_excel(archivo_cargado)
+                    
+                    # Mostrar información sobre el archivo cargado
+                    st.success(f"Archivo cargado: {len(df_cargado)} filas")
+                    
+                    if st.button("💾 Aplicar datos cargados"):
+                        # Guardar el archivo como registros.csv
+                        df_cargado.to_csv('registros.csv', index=False, sep=';')
+                        st.success("Datos aplicados correctamente. Recargando...")
+                        st.rerun()
+                        
+                except Exception as e:
+                    st.error(f"Error al procesar el archivo: {e}")
+
         # Información sobre el tablero
         st.sidebar.markdown('<div class="subtitle">Información</div>', unsafe_allow_html=True)
         st.sidebar.markdown("""
@@ -2604,7 +2717,9 @@ def main():
             
             st.markdown("---")  # Separador visual
             
-            mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registros_df)     
+            # MODIFICACIÓN: Pasar los valores de filtros a la función mostrar_dashboard
+            mostrar_dashboard(df_filtrado, metas_nuevas_df, metas_actualizar_df, registros_df,
+                            entidad_seleccionada, funcionario_seleccionado, nivel_seleccionado)     
         with tab2:
             registros_df = mostrar_edicion_registros(registros_df)
 
